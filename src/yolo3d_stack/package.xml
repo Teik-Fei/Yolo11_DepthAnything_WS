@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>yolo3d_stack</name>
+<version>0.1.0</version>
+<description>YOLO11 (n) + Depth Anything (small) + Fusion/BEV in ROS2 Humble (C++)</description>
+<maintainer email="you@example.com">Your Name</maintainer>
+<license>Apache-2.0</license>
+
+
+<buildtool_depend>ament_cmake</buildtool_depend>
+
+
+<depend>rclcpp</depend>
+<depend>sensor_msgs</depend>
+<depend>std_msgs</depend>
+<depend>image_transport</depend>
+<depend>cv_bridge</depend>
+<depend>vision_msgs</depend>
+<depend>message_filters</depend>
+
+
+<exec_depend>opencv</exec_depend>
+
+
+<export>
+<build_type>ament_cmake</build_type>
+</export>
+</package>

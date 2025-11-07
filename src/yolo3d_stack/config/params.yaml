@@ -1,0 +1,44 @@
+yolo11_node:
+ros__parameters:
+model_path: "${share}/yolo3d_stack/config/yolo11n.onnx" # put your model here
+classes_path: "${share}/yolo3d_stack/config/classes.txt"
+conf_threshold: 0.25
+iou_threshold: 0.45
+input_width: 640
+input_height: 480
+use_cuda: true # OpenCV DNN -> CUDA backend
+publish_visualized: true
+camera_topic: "/camera/image_raw"
+
+
+depth_anything_node:
+ros__parameters:
+model_path: "${share}/yolo3d_stack/config/depth_anything_small.onnx"
+input_width: 640
+input_height: 480
+use_cuda: true
+camera_topic: "/camera/image_raw"
+output_topic: "/depth/map" # float32 mono depth in meters (approx.)
+
+
+fusion_bev_node:
+ros__parameters:
+camera_topic: "/camera/image_raw"
+det_topic: "/yolo/detections_2d"
+depth_topic: "/depth/map"
+bev_topic: "/yolo3d/bev"
+det3d_topic: "/yolo3d/detections_3d"
+# If fx/fy/cx/cy unknown, set FOVs and image size; code will derive intrinsics.
+fx: 0.0
+fy: 0.0
+cx: 0.0
+cy: 0.0
+fov_x_deg: 60.0
+fov_y_deg: 45.0
+img_width: 640
+img_height: 480
+# BEV grid (meters)
+bev_forward_m: 20.0 # y+
+bev_side_m: 10.0 # x±
+bev_resolution_m: 0.1
+median_depth_samples: 25 # per box center sampling window
