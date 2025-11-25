@@ -1,42 +1,46 @@
-#pragma once
-#include <rclcpp/rclcpp.hpp>
-#include <image_transport/image_transport.hpp>
-#include <cv_bridge/cv_bridge.h>
-#include <vision_msgs/msg/detection2_d_array.hpp>
-#include <vision_msgs/msg/detection3_d_array.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <message_filters/subscriber.h>
-#include <message_filters/time_synchronizer.h>
-#include <message_filters/sync_policies/approximate_time.h>
-#include <opencv2/opencv.hpp>
+#ifndef FUSION_BEV_NODE_HPP_
+#define FUSION_BEV_NODE_HPP_
 
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <vision_msgs/vision_msgs/msg/detection2_d_array.hpp>
+#include <vision_msgs/vision_msgs/msg/detection2_d.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
 
 class FusionBevNode : public rclcpp::Node {
 public:
-FusionBevNode();
+    explicit FusionBevNode(const rclcpp::NodeOptions & options);
+
 private:
-void cb(const vision_msgs::msg::Detection2DArray::ConstSharedPtr &det,
-const sensor_msgs::msg::Image::ConstSharedPtr &depth);
+    // Individual Callbacks (Store the latest data)
+    void imgCb(const sensor_msgs::msg::Image::SharedPtr msg);
+    void depthCb(const sensor_msgs::msg::Image::SharedPtr msg);
+    void detCb(const vision_msgs::msg::Detection2DArray::SharedPtr msg);
 
+    // Processing loop (Replaces message_filters::Synchronizer)
+    void processTimerCb();
 
-// Params / camera intrinsics
-float fx_, fy_, cx_, cy_;
-float fovx_deg_, fovy_deg_;
-int img_w_, img_h_;
+    // Subscriptions
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_img_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
+    rclcpp::Subscription<vision_msgs::msg::Detection2DArray>::SharedPtr sub_dets_;
 
+    // Publisher
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr bev_pub_;
 
-// BEV params
-float bev_forward_m_, bev_side_m_, bev_res_m_;
-int median_samples_;
+    // Data Cache (Latest messages received)
+    sensor_msgs::msg::Image::SharedPtr last_img_;
+    sensor_msgs::msg::Image::SharedPtr last_depth_;
+    vision_msgs::msg::Detection2DArray::SharedPtr last_dets_;
 
+    // Timer for processing and Watchdog
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Time last_sync_time_; // Used for watchdog check
 
-// pubs/subs
-rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr det3d_pub_;
-image_transport::Publisher bev_pub_;
-
-
-using SyncPolicy = message_filters::sync_policies::ApproximateTime<vision_msgs::msg::Detection2DArray, sensor_msgs::msg::Image>;
-std::shared_ptr<message_filters::Subscriber<vision_msgs::msg::Detection2DArray>> det_sub_;
-std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> depth_sub_;
-std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
+    // Params
+    float scale_factor_;
+    float cam_fx_, cam_cx_;
 };
+
+#endif // FUSION_BEV_NODE_HPP_
