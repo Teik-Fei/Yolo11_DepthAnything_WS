@@ -1,5 +1,5 @@
 #include "yolo3d_stack/depth_anything_node.hpp"
-#include "rclcpp_components/register_node_macro.hpp"
+//#include "rclcpp_components/register_node_macro.hpp"
 #include <rclcpp/qos.hpp>
 
 DepthAnythingNode::DepthAnythingNode(const rclcpp::NodeOptions & options) 

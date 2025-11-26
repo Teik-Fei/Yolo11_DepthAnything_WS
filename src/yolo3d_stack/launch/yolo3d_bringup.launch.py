@@ -29,12 +29,26 @@ def generate_launch_description():
         ),
 
         # --- Node 1: YOLO Object Detection ---
+        #Node(
+        #    package='yolo3d_stack',
+        #    executable='yolo11_node',  # Removed '_exe' to match CMake
+        #    name='yolo11_node',
+        #    parameters=[params],
+        #    output='screen'
+        #),
+
+        # Modified Node 1 (using tensorrt)
         Node(
             package='yolo3d_stack',
-            executable='yolo11_node',  # Removed '_exe' to match CMake
-            name='yolo11_node',
-            parameters=[params],
-            output='screen'
+            executable='yolo11_trt_node',   # ✔ TensorRT CUDA node
+            name='yolo11_trt',
+            output='screen',
+            parameters=[{
+                "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n_fp16.engine",
+                "image_topic": "/camera/image_raw",
+                "conf_threshold": 0.25,
+                "iou_threshold": 0.45,
+            }]
         ),
         
         # --- Node 2: Depth Estimation ---
