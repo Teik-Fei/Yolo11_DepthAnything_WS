@@ -3,8 +3,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <vision_msgs/vision_msgs/msg/detection2_d_array.hpp>
-#include <vision_msgs/vision_msgs/msg/detection2_d.hpp>  // This is the correct header
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>

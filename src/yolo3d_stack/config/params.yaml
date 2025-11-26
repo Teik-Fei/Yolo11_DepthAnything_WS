@@ -2,40 +2,54 @@
 # Configuration for YOLO 3D Stack
 # --------------------------------------------------------
 
-# Node 1: YOLOv11 Object Detection
+# Node 1: YOLOv11 Object Detection (Performs 2D -> 3D Projection)
 yolo11_node:
   ros__parameters:
     camera_topic: "/camera/image_raw"
+    depth_topic: "/depth/image_raw"    # <--- CRITICAL: Needed for 3D fusion
     model_path: "/home/mecatron/yolo11n.onnx" 
     confidence_threshold: 0.45
-    use_cuda: true
+    
+    # Camera Intrinsics (MOVED HERE: This node does the math)
+    fx: 600.0
+    fy: 600.0
+    cx: 320.0
+    cy: 240.0
 
-# Node 2: Depth Anything V2
+# Node 2: Depth Anything V2 (Generates Depth Map)
 depth_anything_node:
   ros__parameters:
     camera_topic: "/camera/image_raw"
     output_topic: "/depth/image_raw"
-    # Path to your Depth-Anything-V2-Small model weights
-    model_path: "/home/mecatron/depth_anything_v2_vits.onnx" # Update this path!
+    model_path: "/home/mecatron/depth_anything_v2_vits.onnx" 
     input_width: 518
     input_height: 518
     use_cuda: true
+    depth_factor: 10.0 # Adjust this: 1.0 = raw output, higher = further distance
 
-# Node 3: Fusion / BEV
+# Node 3: Fusion / BEV (Visualizes Top-Down View)
 fusion_bev_node:
   ros__parameters:
-    # Topics to subscribe to
-    image_topic: "/camera/image_raw"
-    depth_topic: "/depth/image_raw"
-    detections_topic: "/yolo/detections"
-    
-    # Camera Intrinsics (Calibrate these for better accuracy!)
-    camera_fx: 600.0
-    camera_fy: 600.0
-    camera_cx: 320.0
-    camera_cy: 240.0
+    detections_3d_topic: "/yolo3d/detections" # <--- Fixed name to match C++
     
     # BEV Settings
-    bev_width: 640
-    bev_height: 640
-    scale_factor: 0.9  # The linear calibration factor we found earlier
+    bev_size: 700           # <--- Fixed name (Square canvas)
+    meters_to_pixels: 100.0 # <--- Fixed name: 1 meter = 100 pixels
+
+# Node 4: 3D Markers (For Rviz Visualization)
+yolo3d_markers_node:
+  ros__parameters:
+    # Note: Topic names are currently hardcoded in cpp, 
+    # but this block keeps ROS 2 happy.
+    use_sim_time: false
+
+# Node 5: Pointcloud Generator
+depth_to_pointcloud_node:
+  ros__parameters:
+    depth_topic: "/depth/image_raw"
+    cloud_topic: "/depth/pointcloud"
+    fx: 600.0
+    fy: 600.0
+    cx: 320.0
+    cy: 240.0
+    pixel_step: 15  # Higher = Faster, Lower = More dense

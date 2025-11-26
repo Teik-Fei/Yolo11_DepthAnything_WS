@@ -5,19 +5,18 @@
 DepthAnythingNode::DepthAnythingNode(const rclcpp::NodeOptions & options) 
     : Node("depth_anything_node", options) 
 {
-    // --- QoS SETTINGS (Reliable for RQT) ---
-    rclcpp::QoS qos_profile(10);
-
+    // --- Parameters ---
     std::string cam_topic = this->declare_parameter<std::string>("camera_topic", "/camera/image_raw");
-    std::string model_path = this->declare_parameter<std::string>("model_path", "");
-    std::string out_topic = this->declare_parameter<std::string>("output_topic", "/depth/map");
+    std::string model_path = this->declare_parameter<std::string>("model_path", "/home/mecatron/depth_anything_v2_vits.onnx");
+    std::string out_topic = this->declare_parameter<std::string>("output_topic", "/depth/image_raw");
     
     in_w_ = this->declare_parameter<int>("input_width", 518);
     in_h_ = this->declare_parameter<int>("input_height", 518);
     use_cuda_ = this->declare_parameter<bool>("use_cuda", true);
 
-    RCLCPP_INFO(this->get_logger(), "Initializing Depth Node...");
+    RCLCPP_INFO(this->get_logger(), "Initializing Depth Anything Node...");
 
+    // --- Load Network ---
     if (!model_path.empty()) {
         try {
             net_ = cv::dnn::readNet(model_path);
@@ -38,14 +37,13 @@ DepthAnythingNode::DepthAnythingNode(const rclcpp::NodeOptions & options)
         RCLCPP_WARN(this->get_logger(), "No model path provided!");
     }
 
-    rmw_qos_profile_t qos = rmw_qos_profile_default;
+    // --- Subscribers & Publishers ---
     sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         cam_topic, 
-        rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos), qos), 
+        rclcpp::SensorDataQoS(), 
         std::bind(&DepthAnythingNode::imageCb, this, std::placeholders::_1));
         
-    // Publisher (Explicit Reliable QoS)
-    depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>(out_topic, qos_profile);
+    depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>(out_topic, 10);
 }
 
 void DepthAnythingNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &msg) {
@@ -61,6 +59,7 @@ void DepthAnythingNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &m
 
     if (cv_ptr->image.empty()) return;
 
+    // Preprocessing
     cv::Mat blob;
     cv::dnn::blobFromImage(cv_ptr->image, blob, 1.0/255.0, cv::Size(in_w_, in_h_), cv::Scalar(0.485, 0.456, 0.406), true, false);
     
@@ -76,6 +75,7 @@ void DepthAnythingNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &m
 
     if (out.empty()) return;
 
+    // Handle output dimensions
     int out_h = 0;
     int out_w = 0;
 
@@ -91,20 +91,42 @@ void DepthAnythingNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &m
 
     if (out_h <= 0 || out_w <= 0) return;
 
-    cv::Mat depth_small(out_h, out_w, CV_32FC1, out.ptr<float>());
+    // === Conversion to Depth ===
     
+    cv::Mat depth_small(out_h, out_w, CV_32FC1, out.ptr<float>());
     cv::Mat depth;
     cv::resize(depth_small, depth, cv_ptr->image.size(), 0, 0, cv::INTER_LINEAR);
-
-    double minv, maxv;
-    cv::minMaxLoc(depth, &minv, &maxv);
-    double range = std::max(1e-6, (maxv - minv));
     
-    cv::Mat depth_m = (depth - minv) / range;
-    depth_m = 0.5 + 9.5 * depth_m; 
+    // --- FIX APPLIED HERE ---
 
-    auto out_msg = cv_bridge::CvImage(msg->header, "32FC1", depth_m).toImageMsg();
+    // Step 1: Prevent division by zero errors
+    cv::max(depth, 0.1, depth); 
+
+    // Step 2: INVERT the depth
+    
+    // Declare parameter if missing, default to 4.0
+    if (!this->has_parameter("depth_factor")) {
+        this->declare_parameter<float>("depth_factor", 4.0);
+    }
+    
+    // Read the parameter from YAML (or use default)
+    float depth_factor = this->get_parameter("depth_factor").as_double();
+
+    // Perform Inversion: Real_Meters = Factor / Model_Output
+    cv::divide(depth_factor, depth, depth);
+
+    // --- FIX ENDS HERE ---
+
+    // Publish...
+    auto out_msg = cv_bridge::CvImage(msg->header, "32FC1", depth).toImageMsg();
     depth_pub_->publish(*out_msg);
 }
 
-RCLCPP_COMPONENTS_REGISTER_NODE(DepthAnythingNode)
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<DepthAnythingNode>(rclcpp::NodeOptions());
+  rclcpp::spin(node);
+  rclcpp::shutdown();
+  return 0;
+}
