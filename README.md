@@ -55,3 +55,70 @@ This stack fuses **YOLO11 (TensorRT)** 2D object detection with **Depth Anything
 **Launch the full stack (Camera + YOLO + Depth + Visualization):**
 ```bash
 ros2 launch yolo3d_stack yolo3d_bringup.launch.py
+```
+
+### 🖥️ Visualization
+
+The launch file automatically opens **RViz2** with a pre-configured view.
+
+* **3D View:** Displays the dense PointCloud (colored by depth) and Green 3D Bounding Boxes around detected objects.
+* **BEV Panel (Radar):** A top-down "Sonar-style" view on the topic `/fusion/bev`. This shows the robot at the bottom center and objects plotted on a distance grid.
+* **Debug View:** A 2D camera feed with bounding boxes, class names, and estimated distances overlayed on the topic `/yolo/debug_image`.
+
+### ⚙️ Configuration (`params.yaml`)
+
+Configuration is managed in `src/yolo3d_stack/config/params.yaml`.
+
+### 1. Depth Calibration (Critical)
+The "Depth Anything" model provides relative depth. You **must** tune the `depth_factor` to match your specific camera and environment (water vs. air refraction).
+
+**Calibration Steps:**
+1.  Place an object exactly **2.0 meters** away from the camera.
+2.  Check the distance shown in the Debug View or BEV map.
+3.  Update the factor using: `New_Factor = Current_Factor * (Real_Dist / Seen_Dist)`
+
+```yaml
+depth_anything_node:
+  ros__parameters:
+    depth_factor: 4.0  # Increase if reading is too close, decrease if too far
+    input_width: 518   # Model input size (do not change for Small model)
+```
+
+### 2. AUV Radar / BEV Settings   
+Adjust the "Bird's Eye View" grid to change the scale of the map.
+```yaml
+fusion_bev_node:
+  ros__parameters:
+    meters_to_pixels: 100.0 # Scale: 100 pixels = 1 meter
+    bev_size: 600           # Output image size: 600x600 pixels
+```
+### 📊 Performance Monitoring
+To verify that YOLO and Depth models are running on the GPU (Hardware Acceleration), use `jtop` (part of `jetson-stats`).
+**Installation**
+```bash
+sudo pip3 install -U jetson-stats
+```
+**Check Status**: Run `jtop` and switch to the **GPU** tab.
+
+Look for processes `yolo11_trt_node` and `depth_anything_node`.
+
+Ensure the Type column shows `G` (GPU).
+
+If Type shows `C` (CPU), check your CUDA/TensorRT installation.
+
+### 🧩 Nodes Description
+| Node Name            | Function                                                                                                 |
+|---------------------|-----------------------------------------------------------------------------------------------------------|
+| `usb_cam`             | Publishes the raw RGB camera feed from `/dev/video0`.                                                     |
+| `yolo11_trt_node`     | Performs object detection using TensorRT. Publishes 2D boxes + computes 3D coordinates using depth map.    |
+| `depth_anything_node` | Runs Depth Anything V2 using OpenCV CUDA and applies EMA filtering for stability.                         |
+| `fusion_bev_node`     | Generates the Bird’s-Eye “Radar/Sonar” map from fused 3D detections.                                      |
+| `depth_to_pointcloud`| Converts the depth image into a `sensor_msgs/PointCloud2` for rendering in RViz.                          |
+| `yolo3d_markers`      | Publishes RViz Marker cubes to visualize 3D bounding boxes in real-time.                                  |
+
+
+
+
+
+
+
