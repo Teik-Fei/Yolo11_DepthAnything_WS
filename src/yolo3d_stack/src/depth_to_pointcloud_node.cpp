@@ -12,7 +12,7 @@ DepthToPointcloudNode::DepthToPointcloudNode(const rclcpp::NodeOptions & options
     fy_ = declare_parameter("fy",600.0);
     cx_ = declare_parameter("cx",320.0);
     cy_ = declare_parameter("cy",240.0);
-    step_ = declare_parameter("pixel_step", 10); // Default to 10 for performance
+    step_ = declare_parameter("pixel_step", 3); // Default to 10 for performance
 
     sub_ = create_subscription<sensor_msgs::msg::Image>(
         depth_topic_, rclcpp::SensorDataQoS(),
@@ -64,7 +64,7 @@ void DepthToPointcloudNode::callback(const sensor_msgs::msg::Image::SharedPtr ms
             float d = depth.at<float>(v, u);
 
             // Check for invalid depth
-            if(d <= 0.1 || d > 20.0 || std::isnan(d)) {
+            if(d <= 0.1 || d > 50.0 || std::isnan(d)) {
                 *X = std::numeric_limits<float>::quiet_NaN();
                 *Y = std::numeric_limits<float>::quiet_NaN();
                 *Z = std::numeric_limits<float>::quiet_NaN();

@@ -25,7 +25,7 @@ depth_anything_node:
     input_width: 518
     input_height: 518
     use_cuda: true
-    depth_factor: 10.0 # Adjust this: 1.0 = raw output, higher = further distance
+    depth_factor: 0.75 # Adjust this: 1.0 = raw output, higher = further distance
 
 # Node 3: Fusion / BEV (Visualizes Top-Down View)
 fusion_bev_node:
@@ -52,4 +52,4 @@ depth_to_pointcloud_node:
     fy: 600.0
     cx: 320.0
     cy: 240.0
-    pixel_step: 15  # Higher = Faster, Lower = More dense
+    pixel_step: 2  # Higher = Faster, Lower = More dense

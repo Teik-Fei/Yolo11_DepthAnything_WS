@@ -17,7 +17,7 @@ def generate_launch_description():
             name='usb_cam',
             parameters=[{
                 'video_device': '/dev/video0',
-                'framerate': 5.0,
+                'framerate': 10.0,
                 'image_width': 640,
                 'image_height': 480,
                 'pixel_format': 'yuyv' 
@@ -46,28 +46,35 @@ def generate_launch_description():
             parameters=[{
                 "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n_fp16.engine",
                 "image_topic": "/camera/image_raw",
-                "conf_threshold": 0.25,
-                "iou_threshold": 0.45,
+
+                # ADD THESE
+                "visualize_output": True,
+                "publish_debug_image": True,
+                "debug_image_topic": "/yolo/debug_image",
+
+                "conf_threshold": 0.45,
+                "input_width": 640,
+                "input_height": 640
             }]
         ),
-        
+
         # --- Node 2: Depth Estimation ---
         Node(
             package='yolo3d_stack',
             executable='depth_anything_node', # Removed '_exe'
             name='depth_anything_node',
-            parameters=[params, {'depth_factor': 10.0}],
+            parameters=[params, {'depth_factor': 0.75}],
             output='screen'
         ),
         
         # --- Node 3: Fusion / BEV ---
-        #Node(
-        #    package='yolo3d_stack',
-        #    executable='fusion_bev_node', # Removed '_exe'
-        #    name='fusion_bev_node',
-        #    parameters=[params],
-        #    output='screen'
-        #), 
+        Node(
+            package='yolo3d_stack',
+            executable='fusion_bev_node', # Removed '_exe'
+            name='fusion_bev_node',
+            parameters=[params],
+            output='screen'
+        ), 
 
         # --- Node 4: 3D Markers ---
         Node(
@@ -94,5 +101,15 @@ def generate_launch_description():
             name='rviz2',
             arguments=['-d', os.path.join('/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/config', 'yolo3d.rviz')],
             output='screen'
+        ),
+
+        # --- Static TF Publisher (World -> Camera) ---
+        # This tells RViz where the camera is in the 3D world
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            arguments = ['0', '0', '1.0', '0', '0', '0', 'map', 'default_cam'], 
+            # Note: Replace 'camera_frame_id' with the actual frame_id 
+            # your camera publishes (usually 'camera_link' or 'camera_color_optical_frame')
         ),
     ])
