@@ -256,11 +256,20 @@ private:
                         float Y = (cy_px - cy_) * Z / fy_;
 
                         vision_msgs::msg::Detection3D det3; */
-                    
-                    // 1. Get Robust Depth (Median of 20x20 box)
-                    float Z = get_robust_depth(depth_copy, cv::Point((int)d.x, (int)d.y), 20);
 
-                   // 2. Check if valid (The helper returns -1.0 on failure)
+                    // Calculate Dynamic ROI Size
+                    // Use 30% of the smallest side (width or height)
+                    int side = std::min(d.w, d.h);
+                    int dynamic_roi = (int)(side * 0.3);
+
+                    // Safety Clamp (Minimum Size)
+                    // Don't let it get smaller than 1x1 pixel
+                    if (dynamic_roi < 1) dynamic_roi = 1;
+                    
+                    // Get Robust Depth 
+                    float Z = get_robust_depth(depth_copy, cv::Point((int)d.x, (int)d.y), dynamic_roi);
+
+                   // Check if valid (The helper returns -1.0 on failure)
                     if (Z > 0.0f) 
                     { 
                         float X = ((int)d.x - cx_) * Z / fx_;
@@ -269,17 +278,17 @@ private:
                         vision_msgs::msg::Detection3D det3;
                         det3.header = msg->header;
             
-                        // 1. Set 3D Position
+                        // Set 3D Position
                         det3.bbox.center.position.x = X;
                         det3.bbox.center.position.y = Y;
                         det3.bbox.center.position.z = Z;
             
-                        // 2. Set Approximate Size (Optional: could assume fixed size based on class)
+                        // Set Approximate Size (Optional: could assume fixed size based on class)
                         det3.bbox.size.x = 0.2; 
                         det3.bbox.size.y = 0.5;
                         det3.bbox.size.z = 0.2;
 
-                        // 3. CRITICAL: Attach Class ID (The "Name Tag")
+                        // CRITICAL: Attach Class ID (The "Name Tag")
                         vision_msgs::msg::ObjectHypothesisWithPose hyp;
             
                         // Safety check for class names
@@ -290,7 +299,7 @@ private:
                         }
                         hyp.hypothesis.score = d.score;
             
-                        det3.results.push_back(hyp); // <--- Fusion node needs this!
+                        det3.results.push_back(hyp); // <--- For Fusion node
             
                         msg_3d.detections.push_back(det3); 
 
@@ -302,11 +311,11 @@ private:
             }
 
             if(visualize_) {
-                // 1. Define the bounding box
+                // Define the bounding box
                 cv::Rect box(d.x - d.w/2, d.y - d.h/2, d.w, d.h);
                 cv::rectangle(debug_img, box, {0, 255, 0}, 2);
 
-                // 2. Get the Label (with safety check)
+                // Get the Label (with safety check)
                 std::string label;
                 if(d.class_id >= 0 && d.class_id < class_names_.size()) {
                     label = class_names_[d.class_id];
@@ -314,10 +323,10 @@ private:
                     label = "ID:" + std::to_string(d.class_id); // Fallback if name is missing
                 }
                 
-                // Optional: Add confidence score (e.g., "person 0.85")
+                // Add confidence score (e.g., "person 0.85")
                 label += " " + std::to_string(d.score).substr(0,4);
 
-                // 3. Draw Text Background (Green bar so text is readable)
+                // Draw Text Background (Green bar so text is readable)
                 int baseLine;
                 cv::Size labelSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseLine);
                 int top = std::max(box.y, labelSize.height);
@@ -327,7 +336,7 @@ private:
                               cv::Point(box.x + labelSize.width, top),
                               cv::Scalar(0, 255, 0), cv::FILLED);
 
-                // 4. Draw the Text (Black text on Green background)
+                // Draw the Text (Black text on Green background)
                 cv::putText(debug_img, label, 
                             cv::Point(box.x, top - 5),
                             cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
@@ -343,7 +352,7 @@ private:
 // --- Helper: Robust Depth Extraction ---
 float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
     
-    // 1. Define the Box
+    // Define the Box
     // Create a square around the center point
     cv::Rect roi_rect(
         center.x - roi_size / 2, 
@@ -352,7 +361,7 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
         roi_size
     );
 
-    // 2. Safety Clamp (The Intersection Trick)
+    // Safety Clamp
     // We intersect (&) the requested box with the actual image boundaries.
     // If the box hangs off the edge, this chops off the excess.
     cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
@@ -361,10 +370,10 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
     // Sanity check: If box is totally outside, area is 0
     if (final_roi.area() == 0) return -1.0f;
 
-    // 3. Extract the ROI
+    // Extract the ROI
     cv::Mat roi = depth_img(final_roi);
     
-    // 4. Filter Valid Data
+    // Filter Valid Data
     std::vector<float> valid_depths;
     valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
 
@@ -380,7 +389,7 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
         }
     }
 
-    // 5. Calculate Median
+    // Calculate Median
     if (valid_depths.empty()) return -1.0f; // Failure code
 
     // We don't need to fully sort the vector to find the median.
