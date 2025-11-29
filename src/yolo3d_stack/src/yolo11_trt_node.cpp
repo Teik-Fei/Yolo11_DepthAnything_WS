@@ -247,13 +247,24 @@ private:
                 // Check bounds
                 if(cx_px >= 0 && cx_px < depth_copy.cols && cy_px >= 0 && cy_px < depth_copy.rows) 
                 {
-                    float Z = depth_copy.at<float>(cy_px, cx_px);
+                    /*float Z = depth_copy.at<float>(cy_px, cx_px);
         
                     // Filter: Ignore noise (too close) or void (too far)
                     if(Z > 0.1 && Z < 20.0) 
                     { 
                         float X = (cx_px - cx_) * Z / fx_;
                         float Y = (cy_px - cy_) * Z / fy_;
+
+                        vision_msgs::msg::Detection3D det3; */
+                    
+                    // 1. Get Robust Depth (Median of 20x20 box)
+                    float Z = get_robust_depth(depth_copy, cv::Point((int)d.x, (int)d.y), 20);
+
+                   // 2. Check if valid (The helper returns -1.0 on failure)
+                    if (Z > 0.0f) 
+                    { 
+                        float X = ((int)d.x - cx_) * Z / fx_;
+                        float Y = ((int)d.y - cy_) * Z / fy_;
 
                         vision_msgs::msg::Detection3D det3;
                         det3.header = msg->header;
@@ -328,6 +339,57 @@ private:
         debug_pub_->publish(*cv_bridge::CvImage(msg->header, "bgr8", debug_img).toImageMsg());
     }
 };
+
+// --- Helper: Robust Depth Extraction ---
+float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
+    
+    // 1. Define the Box
+    // Create a square around the center point
+    cv::Rect roi_rect(
+        center.x - roi_size / 2, 
+        center.y - roi_size / 2, 
+        roi_size, 
+        roi_size
+    );
+
+    // 2. Safety Clamp (The Intersection Trick)
+    // We intersect (&) the requested box with the actual image boundaries.
+    // If the box hangs off the edge, this chops off the excess.
+    cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
+    cv::Rect final_roi = roi_rect & img_bounds;
+
+    // Sanity check: If box is totally outside, area is 0
+    if (final_roi.area() == 0) return -1.0f;
+
+    // 3. Extract the ROI
+    cv::Mat roi = depth_img(final_roi);
+    
+    // 4. Filter Valid Data
+    std::vector<float> valid_depths;
+    valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
+
+    for (int r = 0; r < roi.rows; ++r) {
+        const float* row_ptr = roi.ptr<float>(r);
+        for (int c = 0; c < roi.cols; ++c) {
+            float d = row_ptr[c];
+
+            // Filter: Must be finite (not NaN), > 0.1m (min range), < 20.0m (max range)
+            if (std::isfinite(d) && d > 0.1f && d < 20.0f) {
+                valid_depths.push_back(d);
+            }
+        }
+    }
+
+    // 5. Calculate Median
+    if (valid_depths.empty()) return -1.0f; // Failure code
+
+    // We don't need to fully sort the vector to find the median.
+    // nth_element is faster (O(N)) than sort (O(N log N)).
+    size_t n = valid_depths.size() / 2;
+    std::nth_element(valid_depths.begin(), valid_depths.begin() + n, valid_depths.end());
+
+    return valid_depths[n];
+}
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
