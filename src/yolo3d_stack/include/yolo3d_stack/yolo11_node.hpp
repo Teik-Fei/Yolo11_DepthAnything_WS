@@ -1,4 +1,6 @@
-/*#ifndef YOLO11_NODE_HPP_
+// Yolo11 Header file to run on CPU
+/*
+#ifndef YOLO11_NODE_HPP_
 #define YOLO11_NODE_HPP_
 
 #include <rclcpp/rclcpp.hpp>
@@ -44,8 +46,7 @@ private:
 
 #endif // YOLO11_NODE_HPP_ */
 
-// ^ Original code CAA 261125
-
+// Yolo11 Header file to run on TensorRT
 #ifndef YOLO11_NODE_HPP_
 #define YOLO11_NODE_HPP_
 

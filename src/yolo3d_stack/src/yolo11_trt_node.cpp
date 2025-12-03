@@ -130,6 +130,57 @@ private:
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr det3d_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_pub_;
 
+    // --- Helper: Robust Depth Extraction ---
+float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
+    
+    // Define the Box
+    // Create a square around the center point
+    cv::Rect roi_rect(
+        center.x - roi_size / 2, 
+        center.y - roi_size / 2, 
+        roi_size, 
+        roi_size
+    );
+
+    // Safety Clamp
+    // We intersect (&) the requested box with the actual image boundaries.
+    // If the box hangs off the edge, this chops off the excess.
+    cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
+    cv::Rect final_roi = roi_rect & img_bounds;
+
+    // Sanity check: If box is totally outside, area is 0
+    if (final_roi.area() == 0) return -1.0f;
+
+    // Extract the ROI
+    cv::Mat roi = depth_img(final_roi);
+    
+    // Filter Valid Data
+    std::vector<float> valid_depths;
+    valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
+
+    for (int r = 0; r < roi.rows; ++r) {
+        const float* row_ptr = roi.ptr<float>(r);
+        for (int c = 0; c < roi.cols; ++c) {
+            float d = row_ptr[c];
+
+            // Filter: Must be finite (not NaN), > 0.1m (min range), < 20.0m (max range)
+            if (std::isfinite(d) && d > 0.1f && d < 20.0f) {
+                valid_depths.push_back(d);
+            }
+        }
+    }
+
+    // Calculate Median
+    if (valid_depths.empty()) return -1.0f; // Failure code
+
+    // We don't need to fully sort the vector to find the median.
+    // nth_element is faster (O(N)) than sort (O(N log N)).
+    size_t n = valid_depths.size() / 2;
+    std::nth_element(valid_depths.begin(), valid_depths.begin() + n, valid_depths.end());
+
+    return valid_depths[n];
+}
+
     // --- Init TRT (Simplified for brevity, assumes working engine) ---
     void init_trt() {
         std::ifstream file(engine_path_, std::ios::binary | std::ios::ate);
@@ -348,57 +399,6 @@ private:
         debug_pub_->publish(*cv_bridge::CvImage(msg->header, "bgr8", debug_img).toImageMsg());
     }
 };
-
-// --- Helper: Robust Depth Extraction ---
-float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
-    
-    // Define the Box
-    // Create a square around the center point
-    cv::Rect roi_rect(
-        center.x - roi_size / 2, 
-        center.y - roi_size / 2, 
-        roi_size, 
-        roi_size
-    );
-
-    // Safety Clamp
-    // We intersect (&) the requested box with the actual image boundaries.
-    // If the box hangs off the edge, this chops off the excess.
-    cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
-    cv::Rect final_roi = roi_rect & img_bounds;
-
-    // Sanity check: If box is totally outside, area is 0
-    if (final_roi.area() == 0) return -1.0f;
-
-    // Extract the ROI
-    cv::Mat roi = depth_img(final_roi);
-    
-    // Filter Valid Data
-    std::vector<float> valid_depths;
-    valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
-
-    for (int r = 0; r < roi.rows; ++r) {
-        const float* row_ptr = roi.ptr<float>(r);
-        for (int c = 0; c < roi.cols; ++c) {
-            float d = row_ptr[c];
-
-            // Filter: Must be finite (not NaN), > 0.1m (min range), < 20.0m (max range)
-            if (std::isfinite(d) && d > 0.1f && d < 20.0f) {
-                valid_depths.push_back(d);
-            }
-        }
-    }
-
-    // Calculate Median
-    if (valid_depths.empty()) return -1.0f; // Failure code
-
-    // We don't need to fully sort the vector to find the median.
-    // nth_element is faster (O(N)) than sort (O(N log N)).
-    size_t n = valid_depths.size() / 2;
-    std::nth_element(valid_depths.begin(), valid_depths.begin() + n, valid_depths.end());
-
-    return valid_depths[n];
-}
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);

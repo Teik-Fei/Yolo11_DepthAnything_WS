@@ -1,3 +1,5 @@
+## Cmake file for running yolo3d_stack on CPU
+
 #[[cmake_minimum_required(VERSION 3.8)
 project(yolo3d_stack)
 
@@ -103,6 +105,8 @@ install(DIRECTORY launch
 
 ament_package()]]
 
+
+## Cmake file for running yolo3d_stack with CUDA + TensorRT
 cmake_minimum_required(VERSION 3.10)
 project(yolo3d_stack)
 
@@ -110,9 +114,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_BUILD_TYPE Release)
 
-###############################################################
-# 🟢 FIND ROS2 PACKAGES
-###############################################################
+# FIND ROS2 PACKAGES
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -123,10 +125,9 @@ find_package(visualization_msgs REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(message_filters REQUIRED)
 
-###############################################################
-# 🟡 CUDA + TensorRT (Automatic Search)
-###############################################################
+# CUDA + TensorRT (Automatic Search)
 find_path(CUDA_INCLUDE_DIR cuda_runtime.h
     PATHS /usr/local/cuda/include /usr/include /usr/include/aarch64-linux-gnu
 )
@@ -147,7 +148,7 @@ find_library(NVINFER_PLUGIN_LIB nvinfer_plugin
     PATHS /usr/lib /usr/lib/aarch64-linux-gnu /usr/local/lib
 )
 
-### 🛑 STOP BUILD IF CUDA/TRT NOT FOUND
+# STOP BUILD IF CUDA/TRT NOT FOUND
 if (NOT CUDART_LIB)
     message(FATAL_ERROR "❌ CUDA Runtime (cudart) not found.\nInstall:\n sudo apt install cuda-toolkit")
 endif()
@@ -163,18 +164,14 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
 )
 
-###############################################################
-# 🔥 BUILD ALL EXECUTABLES
-###############################################################
+# BUILD ALL EXECUTABLES
 add_executable(yolo11_trt_node              src/yolo11_trt_node.cpp)
 add_executable(depth_anything_node          src/depth_anything_node.cpp)
 add_executable(depth_to_pointcloud_node     src/depth_to_pointcloud_node.cpp)
 add_executable(fusion_bev_node              src/fusion_bev_node.cpp)
 add_executable(yolo3d_markers_node          src/yolo3d_markers_node.cpp)
 
-###############################################################
-# 🔗 LINK LIBS
-###############################################################
+# LINK LIBS
 foreach(target 
     yolo11_trt_node 
     depth_anything_node 
@@ -185,7 +182,7 @@ foreach(target
     ament_target_dependencies(${target}
         rclcpp sensor_msgs std_msgs
         cv_bridge vision_msgs visualization_msgs
-        image_transport
+        image_transport message_filters
     )
 
     target_link_libraries(${target}
@@ -196,9 +193,7 @@ foreach(target
     )
 endforeach()
 
-###############################################################
-# 📦 INSTALL
-###############################################################
+# INSTALL
 install(TARGETS
     yolo11_trt_node
     depth_anything_node

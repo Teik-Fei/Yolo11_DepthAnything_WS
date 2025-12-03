@@ -28,19 +28,19 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # --- Node 1: YOLO Object Detection ---
+        # --- Node 1: YOLO Object Detection using CPU---
         #Node(
         #    package='yolo3d_stack',
-        #    executable='yolo11_node',  # Removed '_exe' to match CMake
+        #    executable='yolo11_node', 
         #    name='yolo11_node',
         #    parameters=[params],
         #    output='screen'
         #),
 
-        # Modified Node 1 (using tensorrt)
+        # Modified Node 1 (using tensorRT)
         Node(
             package='yolo3d_stack',
-            executable='yolo11_trt_node',   # ✔ TensorRT CUDA node
+            executable='yolo11_trt_node',   # TensorRT CUDA node
             name='yolo11_trt',
             output='screen',
             parameters=[{
@@ -52,7 +52,7 @@ def generate_launch_description():
                 "publish_debug_image": True,
                 "debug_image_topic": "/yolo/debug_image",
 
-                "conf_threshold": 0.45,
+                "conf_threshold": 0.75,
                 "input_width": 640,
                 "input_height": 640
             }]
@@ -61,7 +61,7 @@ def generate_launch_description():
         # --- Node 2: Depth Estimation ---
         Node(
             package='yolo3d_stack',
-            executable='depth_anything_node', # Removed '_exe'
+            executable='depth_anything_node', 
             name='depth_anything_node',
             parameters=[params, {'depth_factor': 0.75}],
             output='screen'
@@ -70,7 +70,7 @@ def generate_launch_description():
         # --- Node 3: Fusion / BEV ---
         Node(
             package='yolo3d_stack',
-            executable='fusion_bev_node', # Removed '_exe'
+            executable='fusion_bev_node', 
             name='fusion_bev_node',
             parameters=[params],
             output='screen'
@@ -79,7 +79,7 @@ def generate_launch_description():
         # --- Node 4: 3D Markers ---
         Node(
             package='yolo3d_stack',
-            executable='yolo3d_markers_node', # Removed '_exe'
+            executable='yolo3d_markers_node',
             name='yolo3d_markers_node',
             parameters=[params],
             output='screen'
@@ -88,7 +88,7 @@ def generate_launch_description():
         # --- Node 5: Depth → PointCloud ---
         Node(
             package='yolo3d_stack',
-            executable='depth_to_pointcloud_node', # Removed '_exe'
+            executable='depth_to_pointcloud_node', 
             name='depth_to_pointcloud_node',
             parameters=[params],
             output='screen'

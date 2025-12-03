@@ -8,13 +8,14 @@ yolo11_node:
     camera_topic: "/camera/image_raw"
     depth_topic: "/depth/image_raw"    # <--- CRITICAL: Needed for 3D fusion
     model_path: "/home/mecatron/yolo11n.onnx" 
-    confidence_threshold: 0.45
+    confidence_threshold: 0.75
     
     # Camera Intrinsics (MOVED HERE: This node does the math)
-    fx: 600.0
-    fy: 600.0
-    cx: 320.0
-    cy: 240.0
+    fx : 555.715735370142
+    fy : 555.6151962989876
+    cx : 346.7216404016699
+    cy : 239.7857718290915
+
 
 # Node 2: Depth Anything V2 (Generates Depth Map)
 depth_anything_node:
@@ -48,8 +49,10 @@ depth_to_pointcloud_node:
   ros__parameters:
     depth_topic: "/depth/image_raw"
     cloud_topic: "/depth/pointcloud"
-    fx: 600.0
-    fy: 600.0
-    cx: 320.0
-    cy: 240.0
+    fx : 555.715735370142
+    fy : 555.6151962989876
+    cx : 346.7216404016699
+    cy : 239.7857718290915
+
     pixel_step: 2  # Higher = Faster, Lower = More dense
+
