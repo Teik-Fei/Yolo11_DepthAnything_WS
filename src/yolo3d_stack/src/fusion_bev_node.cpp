@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
   return 0;
 } 
 
-## version 2
+## version 2 [Grid map format]
 
 #include "yolo3d_stack/fusion_bev_node.hpp"
 #include <cv_bridge/cv_bridge.h>
@@ -167,8 +167,8 @@ int main(int argc, char ** argv) {
 } */
 
 
-
-// Version 3
+/*
+// Version 3 [Sonar map format]
 #include "yolo3d_stack/fusion_bev_node.hpp"
 #include <cv_bridge/cv_bridge.h>
 #include <std_msgs/msg/header.hpp>
@@ -240,6 +240,118 @@ void FusionBevNode::updateBev(){
                 // Draw Label (e.g. "Valve")
                 std::string label = det.results[0].hypothesis.class_id;
                 cv::putText(bev, label, {int(px)+10, int(py)}, 
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5, {255,255,255}, 1);
+            }
+        }
+    }
+
+    // 4. Publish
+    std_msgs::msg::Header header;
+    header.stamp = this->get_clock()->now();
+    header.frame_id = "map"; 
+    bev_pub_->publish(*cv_bridge::CvImage(header,"bgr8",bev).toImageMsg());
+}
+
+int main(int argc, char ** argv) {
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<FusionBevNode>(rclcpp::NodeOptions()));
+  rclcpp::shutdown();
+  return 0;
+} */
+
+// Version 4 [Enhanced Visualization - 3D box instead of dot]
+
+#include "yolo3d_stack/fusion_bev_node.hpp"
+#include <cv_bridge/cv_bridge.h>
+#include <std_msgs/msg/header.hpp>
+
+FusionBevNode::FusionBevNode(const rclcpp::NodeOptions & options)
+: Node("fusion_bev_node", options)
+{
+    // === AUV Specific Parameters ===
+    std::string det_topic = declare_parameter("detections_3d_topic", "/yolo3d/detections");
+    meters_to_pixels_ = declare_parameter<float>("meters_to_pixels", 100.0f); // 1m = 100px
+    bev_size_         = declare_parameter<int>("bev_size", 600); 
+
+    // Subscribe
+    sub_dets_ = create_subscription<vision_msgs::msg::Detection3DArray>(
+        det_topic, 10,
+        std::bind(&FusionBevNode::detCallback, this, std::placeholders::_1)
+    );
+
+    // Publish
+    bev_pub_ = create_publisher<sensor_msgs::msg::Image>("/fusion/bev", 10);
+
+    // Timer (30 Hz)
+    timer_ = create_wall_timer(std::chrono::milliseconds(33),
+                               std::bind(&FusionBevNode::updateBev, this));
+}
+
+void FusionBevNode::detCallback(const vision_msgs::msg::Detection3DArray::SharedPtr msg){
+    last_dets_ = msg;
+}
+
+void FusionBevNode::updateBev(){
+    // 1. Create Dark "Sonar" Background
+    cv::Mat bev = cv::Mat::zeros(bev_size_, bev_size_, CV_8UC3);
+    
+    // AUV is at the bottom center
+    int cx = bev_size_ / 2;
+    int cy = bev_size_; 
+
+    // 2. Draw Distance Rings (1m, 2m, 3m...)
+    for(int i=1; i<=5; i++) {
+        int radius = i * meters_to_pixels_;
+        if(radius > bev_size_) break; 
+        
+        // Draw Arc
+        cv::circle(bev, {cx, cy}, radius, {0, 80, 0}, 1); // Dark Green lines
+        // Label Distance
+        cv::putText(bev, std::to_string(i)+"m", {cx + 5, cy - radius - 5}, 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.4, {0, 150, 0}, 1);
+    }
+    
+    // Draw Center Reference Line
+    cv::line(bev, {cx, 0}, {cx, bev_size_}, {0, 50, 0}, 1); 
+
+    // 3. Plot Detected Objects (As Boxes!)
+    if(last_dets_) {
+        for(const auto &det : last_dets_->detections){
+            if(det.results.empty()) continue; 
+
+            // --- GET POSITION ---
+            float X = det.bbox.center.position.x; // Left/Right (meters)
+            float Z = det.bbox.center.position.z; // Forward (meters)
+
+            // --- GET SIZE ---
+            // If size is 0 (uninitialized), default to 20cm box
+            float w_real = (det.bbox.size.x > 0) ? det.bbox.size.x : 0.2f; 
+            float d_real = (det.bbox.size.z > 0) ? det.bbox.size.z : 0.2f;
+
+            // --- CONVERT TO PIXELS ---
+            float px = cx + (X * meters_to_pixels_);
+            float py = cy - (Z * meters_to_pixels_);
+            
+            float w_px = w_real * meters_to_pixels_;
+            float d_px = d_real * meters_to_pixels_;
+
+            // Check Bounds
+            if(px >=0 && px < bev_size_ && py >=0 && py < bev_size_) {
+                
+                // Define the Rectangle (Top-Left corner, Bottom-Right corner)
+                cv::Point p1(px - w_px/2, py - d_px/2);
+                cv::Point p2(px + w_px/2, py + d_px/2);
+                
+                // Draw Box Outline (Red)
+                cv::rectangle(bev, p1, p2, cv::Scalar(0, 0, 255), 2);
+
+                // Optional: Fill Box (Semi-transparent look)
+                // We draw a smaller filled box inside
+                cv::rectangle(bev, p1, p2, cv::Scalar(0, 0, 100), -1);
+
+                // Draw Label (e.g. "Valve")
+                std::string label = det.results[0].hypothesis.class_id;
+                cv::putText(bev, label, {int(px) + int(w_px/2) + 5, int(py)}, 
                             cv::FONT_HERSHEY_SIMPLEX, 0.5, {255,255,255}, 1);
             }
         }

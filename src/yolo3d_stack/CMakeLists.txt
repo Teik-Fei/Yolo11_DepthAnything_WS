@@ -126,6 +126,7 @@ find_package(image_transport REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(CUDA REQUIRED)
 
 # CUDA + TensorRT (Automatic Search)
 find_path(CUDA_INCLUDE_DIR cuda_runtime.h
@@ -171,13 +172,16 @@ add_executable(depth_to_pointcloud_node     src/depth_to_pointcloud_node.cpp)
 add_executable(fusion_bev_node              src/fusion_bev_node.cpp)
 add_executable(yolo3d_markers_node          src/yolo3d_markers_node.cpp)
 
+add_executable(depth_anything_trt_node      src/depth_anything_trt_node.cpp)
+
 # LINK LIBS
 foreach(target 
     yolo11_trt_node 
     depth_anything_node 
     depth_to_pointcloud_node 
     fusion_bev_node 
-    yolo3d_markers_node)
+    yolo3d_markers_node
+    depth_anything_trt_node)
 
     ament_target_dependencies(${target}
         rclcpp sensor_msgs std_msgs
@@ -200,6 +204,7 @@ install(TARGETS
     depth_to_pointcloud_node
     fusion_bev_node
     yolo3d_markers_node
+    depth_anything_trt_node
     DESTINATION lib/${PROJECT_NAME}
 )
 

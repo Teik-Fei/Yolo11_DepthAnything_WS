@@ -21,14 +21,15 @@ DepthToPointcloudNode::DepthToPointcloudNode(const rclcpp::NodeOptions & options
     cx_ = declare_parameter("cx", 346.7216404016699);
     cy_ = declare_parameter("cy", 239.7857718290915);
 
-    step_ = declare_parameter("pixel_step", 3);
+    step_ = declare_parameter("pixel_step", 2);
 
     // Publisher
     pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(cloud_topic_, 10);
 
     // Subscribers
-    depth_sub_.subscribe(this, depth_topic_);
-    rgb_sub_.subscribe(this, rgb_topic_);
+    auto qos = rclcpp::SensorDataQoS().get_rmw_qos_profile();
+    depth_sub_.subscribe(this, depth_topic_, qos);
+    rgb_sub_.subscribe(this, rgb_topic_, qos);
 
     using SyncPolicy = message_filters::sync_policies::ApproximateTime<
         sensor_msgs::msg::Image,

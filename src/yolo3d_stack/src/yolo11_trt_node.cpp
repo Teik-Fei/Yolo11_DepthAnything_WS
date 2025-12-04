@@ -65,14 +65,14 @@ public:
 
         // --- Parameters ---
         engine_path_ = this->declare_parameter<std::string>("engine_path", "");
-        conf_thresh_ = this->declare_parameter<float>("conf_threshold", 0.45f);
+        conf_thresh_ = this->declare_parameter<float>("conf_threshold", 0.75f);
         visualize_ = this->declare_parameter<bool>("visualize_output", true);
         
         // Intrinsics (Matches params.yaml)
-        fx_ = this->declare_parameter<float>("fx", 600.0);
-        fy_ = this->declare_parameter<float>("fy", 600.0);
-        cx_ = this->declare_parameter<float>("cx", 320.0);
-        cy_ = this->declare_parameter<float>("cy", 240.0);
+        fx_ = this->declare_parameter<float>("fx", 555.715735370142);
+        fy_ = this->declare_parameter<float>("fy", 555.6151962989876);
+        cx_ = this->declare_parameter<float>("cx", 346.7216404016699);
+        cy_ = this->declare_parameter<float>("cy", 239.7857718290915);
 
         class_names_ = {
             "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
@@ -129,57 +129,80 @@ private:
     rclcpp::Publisher<vision_msgs::msg::Detection2DArray>::SharedPtr det2d_pub_;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr det3d_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_pub_;
+    std::map<int, std::deque<float>> depth_history_; // Stores last N depth values for each class
+    const int smooth_window_ = 3; // Average over 3 frames
 
     // --- Helper: Robust Depth Extraction ---
-float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
+    float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size = 10) {
     
-    // Define the Box
-    // Create a square around the center point
-    cv::Rect roi_rect(
-        center.x - roi_size / 2, 
-        center.y - roi_size / 2, 
-        roi_size, 
-        roi_size
-    );
+        // Define the Box
+        // Create a square around the center point
+        cv::Rect roi_rect(
+            center.x - roi_size / 2, 
+            center.y - roi_size / 2, 
+            roi_size, 
+            roi_size
+        );
 
-    // Safety Clamp
-    // We intersect (&) the requested box with the actual image boundaries.
-    // If the box hangs off the edge, this chops off the excess.
-    cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
-    cv::Rect final_roi = roi_rect & img_bounds;
+        // Safety Clamp
+        // We intersect (&) the requested box with the actual image boundaries.
+        // If the box hangs off the edge, this chops off the excess.
+        cv::Rect img_bounds(0, 0, depth_img.cols, depth_img.rows);
+        cv::Rect final_roi = roi_rect & img_bounds;
 
-    // Sanity check: If box is totally outside, area is 0
-    if (final_roi.area() == 0) return -1.0f;
+        // Sanity check: If box is totally outside, area is 0
+        if (final_roi.area() == 0) return -1.0f;
 
-    // Extract the ROI
-    cv::Mat roi = depth_img(final_roi);
+        // Extract the ROI
+        cv::Mat roi = depth_img(final_roi);
     
-    // Filter Valid Data
-    std::vector<float> valid_depths;
-    valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
+        // Filter Valid Data
+        std::vector<float> valid_depths;
+        valid_depths.reserve(final_roi.area()); // Optimization: reserve memory
 
-    for (int r = 0; r < roi.rows; ++r) {
-        const float* row_ptr = roi.ptr<float>(r);
-        for (int c = 0; c < roi.cols; ++c) {
-            float d = row_ptr[c];
+        for (int r = 0; r < roi.rows; ++r) {
+            const float* row_ptr = roi.ptr<float>(r);
+            for (int c = 0; c < roi.cols; ++c) {
+                float d = row_ptr[c];
 
-            // Filter: Must be finite (not NaN), > 0.1m (min range), < 20.0m (max range)
-            if (std::isfinite(d) && d > 0.1f && d < 20.0f) {
-                valid_depths.push_back(d);
+                // Filter: Must be finite (not NaN), > 0.1m (min range), < 20.0m (max range)
+                if (std::isfinite(d) && d > 0.1f && d < 20.0f) {
+                    valid_depths.push_back(d);
+                }
             }
         }
+
+        // Calculate Median
+        if (valid_depths.empty()) return -1.0f; // Failure code
+
+        // We don't need to fully sort the vector to find the median.
+        // nth_element is faster (O(N)) than sort (O(N log N)).
+        size_t n = valid_depths.size() / 2;
+        std::nth_element(valid_depths.begin(), valid_depths.begin() + n, valid_depths.end());
+
+        return valid_depths[n];
     }
 
-    // Calculate Median
-    if (valid_depths.empty()) return -1.0f; // Failure code
+    float get_smoothed_depth(int class_id, float new_depth) {
+        // 1. Init buffer if needed
+        if (depth_history_.find(class_id) == depth_history_.end()) {
+            depth_history_[class_id] = std::deque<float>();
+        }
 
-    // We don't need to fully sort the vector to find the median.
-    // nth_element is faster (O(N)) than sort (O(N log N)).
-    size_t n = valid_depths.size() / 2;
-    std::nth_element(valid_depths.begin(), valid_depths.begin() + n, valid_depths.end());
+        // 2. Add new value
+        auto& buffer = depth_history_[class_id];
+        buffer.push_back(new_depth);
 
-    return valid_depths[n];
-}
+        // 3. Keep size fixed
+        if (buffer.size() > smooth_window_) {
+            buffer.pop_front();
+        }
+
+        // 4. Calculate Average
+        float sum = 0;
+        for (float d : buffer) sum += d;
+        return sum / buffer.size();
+    }
 
     // --- Init TRT (Simplified for brevity, assumes working engine) ---
     void init_trt() {
@@ -236,7 +259,7 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
         // 2. Inference
         cudaMemcpyAsync(d_input_, blob.data(), input_size_, cudaMemcpyHostToDevice, stream_);
         
-        // Set tensor addresses (TRT 8.5+)
+        // Set tensor addresses
         context_->setInputTensorAddress("images", d_input_);
         context_->setOutputTensorAddress("output0", d_output_);
         context_->enqueueV3(stream_);
@@ -298,16 +321,6 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
                 // Check bounds
                 if(cx_px >= 0 && cx_px < depth_copy.cols && cy_px >= 0 && cy_px < depth_copy.rows) 
                 {
-                    /*float Z = depth_copy.at<float>(cy_px, cx_px);
-        
-                    // Filter: Ignore noise (too close) or void (too far)
-                    if(Z > 0.1 && Z < 20.0) 
-                    { 
-                        float X = (cx_px - cx_) * Z / fx_;
-                        float Y = (cy_px - cy_) * Z / fy_;
-
-                        vision_msgs::msg::Detection3D det3; */
-
                     // Calculate Dynamic ROI Size
                     // Use 30% of the smallest side (width or height)
                     int side = std::min(d.w, d.h);
@@ -323,6 +336,9 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
                    // Check if valid (The helper returns -1.0 on failure)
                     if (Z > 0.0f) 
                     { 
+                        Z = get_smoothed_depth(d.class_id, Z);
+                        
+                        // 2. Calculate 3D Position (X, Y)
                         float X = ((int)d.x - cx_) * Z / fx_;
                         float Y = ((int)d.y - cy_) * Z / fy_;
 
@@ -334,12 +350,21 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
                         det3.bbox.center.position.y = Y;
                         det3.bbox.center.position.z = Z;
             
-                        // Set Approximate Size (Optional: could assume fixed size based on class)
-                        det3.bbox.size.x = 0.2; 
-                        det3.bbox.size.y = 0.5;
-                        det3.bbox.size.z = 0.2;
+                        // --- NEW: DYNAMIC SIZE CALCULATION ---
+                        // Use Similar Triangles to find real size from pixel size
+                        
+                        // Real Width = (Pixel_Width * Distance) / Focal_Length_X
+                        det3.bbox.size.x = (d.w * Z) / fx_; 
 
-                        // CRITICAL: Attach Class ID (The "Name Tag")
+                        // Real Height = (Pixel_Height * Distance) / Focal_Length_Y
+                        det3.bbox.size.y = (d.h * Z) / fy_;
+
+                        // Estimate Thickness (Z-axis)
+                        // Since we can't see "depth" directly, we assume the object 
+                        // is roughly as thick as it is wide (Square Footprint).
+                        det3.bbox.size.z = det3.bbox.size.x;
+
+                        // Attach Class ID (The "Name Tag")
                         vision_msgs::msg::ObjectHypothesisWithPose hyp;
             
                         // Safety check for class names
@@ -374,7 +399,7 @@ float get_robust_depth(const cv::Mat& depth_img, cv::Point center, int roi_size 
                     label = "ID:" + std::to_string(d.class_id); // Fallback if name is missing
                 }
                 
-                // Add confidence score (e.g., "person 0.85")
+                // Add confidence score (e.g "person 0.85")
                 label += " " + std::to_string(d.score).substr(0,4);
 
                 // Draw Text Background (Green bar so text is readable)

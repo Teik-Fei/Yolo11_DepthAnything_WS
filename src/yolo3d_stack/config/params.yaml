@@ -56,3 +56,17 @@ depth_to_pointcloud_node:
 
     pixel_step: 2  # Higher = Faster, Lower = More dense
 
+
+# Node 6: Depth Anything TensorRT 
+depth_anything_trt_node:
+  ros__parameters:
+    camera_topic: "/camera/image_raw"
+    engine_path: "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/depth_anything_v2_vits_fp16.engine"
+    output_topic: "/depth/image_raw"
+    input_width: 518
+    input_height: 518
+    use_gpu: true
+    max_depth_m: 1.275
+    do_calibration: false
+    target_distance_m: 1.0
+    calibration_samples: 30

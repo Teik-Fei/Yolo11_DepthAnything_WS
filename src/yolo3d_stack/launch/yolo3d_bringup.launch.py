@@ -59,13 +59,13 @@ def generate_launch_description():
         ),
 
         # --- Node 2: Depth Estimation ---
-        Node(
-            package='yolo3d_stack',
-            executable='depth_anything_node', 
-            name='depth_anything_node',
-            parameters=[params, {'depth_factor': 0.75}],
-            output='screen'
-        ),
+        #Node(
+        #    package='yolo3d_stack',
+        #    executable='depth_anything_node', 
+        #    name='depth_anything_node',
+        #    parameters=[params, {'depth_factor': 0.75}],
+        #    output='screen'
+        #),
         
         # --- Node 3: Fusion / BEV ---
         Node(
@@ -112,4 +112,13 @@ def generate_launch_description():
             # Note: Replace 'camera_frame_id' with the actual frame_id 
             # your camera publishes (usually 'camera_link' or 'camera_color_optical_frame')
         ),
+
+        # --- Depth Anything TensorRT Node ---
+        Node(
+            package="yolo3d_stack",
+            executable="depth_anything_trt_node",
+            name="depth_anything_trt_node",
+            output="screen",
+            parameters=["config/depth_anything_trt.yaml"],
+        )
     ])
