@@ -127,6 +127,12 @@ find_package(std_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(CUDA REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(PCL REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 # CUDA + TensorRT (Automatic Search)
 find_path(CUDA_INCLUDE_DIR cuda_runtime.h
@@ -163,6 +169,9 @@ include_directories(
     ${CUDA_INCLUDE_DIR}
     ${TENSORRT_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+    ${TF2_GEOMETRY_MSGS_INCLUDE_DIRS}
+    ${TF2_ROS_INCLUDE_DIRS}
 )
 
 # BUILD ALL EXECUTABLES
@@ -171,7 +180,6 @@ add_executable(depth_anything_node          src/depth_anything_node.cpp)
 add_executable(depth_to_pointcloud_node     src/depth_to_pointcloud_node.cpp)
 add_executable(fusion_bev_node              src/fusion_bev_node.cpp)
 add_executable(yolo3d_markers_node          src/yolo3d_markers_node.cpp)
-
 add_executable(depth_anything_trt_node      src/depth_anything_trt_node.cpp)
 
 # LINK LIBS
@@ -186,7 +194,8 @@ foreach(target
     ament_target_dependencies(${target}
         rclcpp sensor_msgs std_msgs
         cv_bridge vision_msgs visualization_msgs
-        image_transport message_filters
+        image_transport message_filters pcl_conversions
+        pcl_ros tf2_geometry_msgs tf2_ros
     )
 
     target_link_libraries(${target}
@@ -194,6 +203,7 @@ foreach(target
         ${CUDART_LIB}
         ${NVINFER_LIB}
         ${NVINFER_PLUGIN_LIB}
+        ${PCL_LIBRARIES}
     )
 endforeach()
 
@@ -208,7 +218,7 @@ install(TARGETS
     DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch config models
+install(DIRECTORY launch config models URDF
     DESTINATION share/${PROJECT_NAME}
 )
 
