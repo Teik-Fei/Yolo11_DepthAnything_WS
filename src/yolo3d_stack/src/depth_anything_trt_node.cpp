@@ -31,7 +31,7 @@ public:
 
         input_w_     = declare_parameter("input_width", 518);
         input_h_     = declare_parameter("input_height", 518);
-        max_depth_m_ = declare_parameter("max_depth_m", 1.275f);
+        max_depth_m_ = declare_parameter("max_depth_m", 1.5f);
 
         // === CALIBRATION MODE ===
         do_calibration_   = declare_parameter("do_calibration", false);
@@ -284,7 +284,8 @@ private:
         if (accumulated_.empty()) {
             accumulated_ = depth_resized.clone();
         } else {
-            cv::addWeighted(depth_resized, alpha_, accumulated_, 1.0-alpha_, 0.0, accumulated_);
+            //cv::addWeighted(depth_resized, alpha_, accumulated_, 1.0-alpha_, 0.0, accumulated_);
+            accumulated_ = depth_resized.clone();
         }
 
         auto out_msg = cv_bridge::CvImage(msg->header, "32FC1", accumulated_).toImageMsg();

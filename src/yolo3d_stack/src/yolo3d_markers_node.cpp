@@ -123,7 +123,7 @@ private:
             
             // Lifetime: 0 = Infinite (Stays forever until you restart RViz)
             // Set to 5.0 if you want them to fade after 5 seconds
-            m.lifetime = rclcpp::Duration(0, 0); 
+            m.lifetime = rclcpp::Duration(5.0, 0); 
 
             arr.markers.push_back(m);
 

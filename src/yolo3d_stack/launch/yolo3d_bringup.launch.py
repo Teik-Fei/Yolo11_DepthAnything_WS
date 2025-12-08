@@ -31,12 +31,11 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Add this node to bridge Map -> Odom
+        # Bridge Map -> Odom (Static for now)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='static_map_odom_publisher',
-            # Arguments: x y z yaw pitch roll parent_frame child_frame
             arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
             output='screen'
         ),
@@ -52,7 +51,7 @@ def generate_launch_description():
                 'image_width': 640,
                 'image_height': 480,
                 'pixel_format': 'yuyv',
-                'frame_id': 'camera_link_optical' # <--- CRITICAL: Matches URDF
+                'frame_id': 'camera_link_optical' 
             }],
             remappings=[
                 ('image_raw', '/camera/image_raw')
@@ -60,7 +59,7 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Static TF: Map -> Base Link (Fakes the Odometry for testing)
+        # Static TF: Map -> Base Link (Fake Odometry)
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -71,16 +70,13 @@ def generate_launch_description():
         # 2. PERCEPTION PIPELINE
         # ====================================================
 
-        # YOLOv11 (TensorRT) - Generates Obstacle Cloud
+        # YOLOv11 (TensorRT)
         Node(
             package='yolo3d_stack',
             executable='yolo11_trt_node',
             name='yolo11_trt',
             output='screen',
             parameters=[{
-            # YOLOv11 bounding box Engine Path
-            #    "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n_fp16.engine",
-            # Yolov11-segmentation Engine Path
                 "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine",
                 "image_topic": "/camera/image_raw",
                 "visualize_output": True,
@@ -92,13 +88,55 @@ def generate_launch_description():
             }, yolo_params] 
         ),
 
-        # Depth Anything (TensorRT)
+        # Depth Anything (TensorRT) - THE BRAIN
         Node(
             package="yolo3d_stack",
             executable="depth_anything_trt_node",
             name="depth_anything_trt_node",
             output="screen",
-            parameters=[yolo_params],
+            parameters=[
+                yolo_params,
+                # OVERRIDE: Adjust this value to calibrate the "LiDAR" range!
+                # If the wall is 2m away but Rviz shows 1m, double this to ~2.5
+                {"max_depth_m": 1.5} 
+            ],
+        ),
+
+        # Depth -> Dense PointCloud - THE GEOMETRY
+        Node(
+           package='yolo3d_stack',
+           executable='depth_to_pointcloud_node', 
+           name='depth_to_pointcloud_node',
+           parameters=[
+               yolo_params,
+               # Downsample to reduce CPU load (LiDARs don't need HD resolution)
+               {"pixel_step": 4}, 
+               {"fx": 650.0}, 
+               {"fy": 650.0}
+           ],
+           output='screen'
+        ),
+
+        # PointCloud -> LaserScan - THE SLICER (Virtual LiDAR)
+        Node(
+            package='pointcloud_to_laserscan',
+            executable='pointcloud_to_laserscan_node',
+            name='pointcloud_to_laserscan',
+            remappings=[
+                ('cloud_in', '/depth/pointcloud'),
+                ('scan', '/scan')
+            ],
+            parameters=[{
+                'target_frame': 'base_link', # Projects scan onto the robot base
+                'transform_tolerance': 0.01,
+                'min_height': -3.0, # Floor cut-off (relative to camera height) [might need to fine tune this based on diff settings]
+                'max_height': 3.0,  # Ceiling cut-off [might need to fine tune this based on diff settings]
+                'angle_min': -1.57, # -90 deg
+                'angle_max': 1.57,  # +90 deg
+                'range_min': 0.5,   # Ignore noise right in front of lens
+                'range_max': 5.0,   # Max reliable range
+                'use_inf': True
+            }]
         ),
 
         # Fusion / BEV Visualization
@@ -119,22 +157,14 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Depth -> Dense PointCloud (Visual V-Shape)
-        #Node(
-        #    package='yolo3d_stack',
-        #    executable='depth_to_pointcloud_node', 
-        #    name='depth_to_pointcloud_node',
-        #    parameters=[yolo_params],
-        #    output='screen'
-        #),
-
         # ====================================================
-        # 3. NAVIGATION STACK (NEW)
+        # 3. NAVIGATION STACK
         # ====================================================
         Node(
             package='nav2_costmap_2d',
             executable='nav2_costmap_2d',
-            name='costmap',            # <--- MATCHES YAML
+            name='costmap', 
+            namespace='costmap',
             output='screen',
             parameters=[nav2_params],
             remappings=[
@@ -144,7 +174,7 @@ def generate_launch_description():
         ),
 
         # ====================================================
-        # 4.LIFECYCLE MANAGER
+        # 4. LIFECYCLE MANAGER
         # ====================================================
         Node(
             package='nav2_lifecycle_manager',
@@ -154,13 +184,13 @@ def generate_launch_description():
             parameters=[
                 {'use_sim_time': False},
                 {'autostart': True},
-                {'node_names': ['/costmap/costmap']}, # <--- MATCHES NODE NAME
-                {'bond_timeout': 120.0}           # <--- INCREASED TIMEOUT (Fixes slow startup)
+                {'node_names': ['/costmap/costmap']},
+                {'bond_timeout': 120.0}
             ]
         ),
 
         # ====================================================
-        # 5.VISUALIZATION
+        # 5. VISUALIZATION
         # ====================================================
         Node(
             package='rviz2',
