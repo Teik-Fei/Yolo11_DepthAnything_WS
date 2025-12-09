@@ -119,7 +119,7 @@ Before running the simulation, you must temporarily disable the real Visual Odom
 * Comment out the `rtabmap_odom` node block.
 
 ### 2. Create the Driver Script
-Create the driver file at `src/yolo3d_stack/yolo3d_stack/fake_driver.py`:
+Create the driver file at `~/Yolo11_DepthAnything_WS/src/yolo3d_stack/src/fake_driver.py`:
 
 <details>
 <summary>Click to see fake_driver.py code</summary>
