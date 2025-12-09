@@ -32,6 +32,13 @@ yolo11_trt:  # <--- MATCH THIS with your launch file node name
     cx : 346.7216404016699
     cy : 239.7857718290915
 
+    # Underwater Camera Adjustments (Uncomment if needed)
+    # Approximate 1.33x zoom effect of water
+    #fx: 740.5 
+    #fy: 740.5
+    # Lower confidence for murky water
+    #confidence_threshold: 0.50
+
 
 # Node 2: Depth Anything V2 (Generates Depth Map)
 depth_anything_node:

@@ -78,12 +78,12 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Static TF: Map -> Base Link (Fake Odometry)
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments = ['0', '0', '1.0', '0', '0', '0', 'odom', 'base_link']
-        ),
+        # Static TF: odom -> Base Link (Fake Odometry)
+        #Node(
+        #    package='tf2_ros',
+        #    executable='static_transform_publisher',
+        #    arguments = ['0', '0', '1.0', '0', '0', '0', 'odom', 'base_link']
+        #),
 
         # ====================================================
         # 2. PERCEPTION PIPELINE
@@ -106,6 +106,24 @@ def generate_launch_description():
                 "input_height": 640,
             }, yolo_params] 
         ),
+
+        # SAUVC dataset (TensorRT)
+        #Node(
+        #    package='yolo3d_stack',
+        #    executable='yolo11_trt_node',
+        #    name='yolo11_trt',
+        #    output='screen',
+        #    parameters=[{
+        #        "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/sauvc_5.engine",
+        #        "image_topic": "/camera/image_raw",
+        #        "visualize_output": True,
+        #        "publish_debug_image": True,
+        #        "debug_image_topic": "/yolo/debug_image",
+        #        "conf_threshold": 0.75,
+        #        "input_width": 640,
+        #        "input_height": 640,
+        #    }, yolo_params] 
+        #),
 
         # Depth Anything (TensorRT) - THE BRAIN
         Node(
@@ -195,35 +213,35 @@ def generate_launch_description():
         # ====================================================
         # VISUAL ODOMETRY (The "GPS" for your map)
         # ====================================================
-        Node(
-            package='rtabmap_odom',
-            executable='rgbd_odometry',
-            name='visual_odometry',
-            output='screen',
-            parameters=[{
-                'frame_id': 'base_link',
-                'odom_frame_id': 'odom',
-                'publish_tf': True,
-                'approx_sync': True,
-                'approx_sync_max_interval': 0.3, # 0.3s is perfect for AI lag
-                'wait_for_transform': 0.3,
-                'queue_size': 50,
+        #Node(
+        #    package='rtabmap_odom',
+        #    executable='rgbd_odometry',
+        #    name='visual_odometry',
+        #    output='screen',
+        #    parameters=[{
+        #        'frame_id': 'base_link',
+        #        'odom_frame_id': 'odom',
+        #        'publish_tf': True,
+        #        'approx_sync': True,
+        #        'approx_sync_max_interval': 0.3, # 0.3s is perfect for AI lag
+        #        'wait_for_transform': 0.3,
+        #        'queue_size': 50,
 
                 # --- Tuning Fixes ---
-                'Odom/Strategy': '1',          # CHANGED: Frame-to-Frame (Much more stable startup)
-                'Vis/MinInliers': '8',         # CHANGED: Lower threshold to accept more frames
-                'Vis/FeatureType': '2',        # CHANGED: ORB (Better general performance than GFTT)
-                'Vis/MaxDepth': '5.0',         # Increased slightly to see further
-                'Reg/Force3DoF': 'False',
-                'Odom/ResetCountdown': '1',    # NEW: If lost, try to reset immediately
-            }],
-            remappings=[
-                ('rgb/image', '/camera/image_bgr'),         # Input RGB
-                ('depth/image', '/depth/image_raw'),        # Input AI Depth
-                ('rgb/camera_info', '/camera/camera_info'), # Input Calibration
-                ('odom', '/odom')                           # Output Topic
-            ]
-        ),
+        #        'Odom/Strategy': '1',          # CHANGED: Frame-to-Frame (Much more stable startup)
+        #        'Vis/MinInliers': '8',         # CHANGED: Lower threshold to accept more frames
+        #        'Vis/FeatureType': '2',        # CHANGED: ORB (Better general performance than GFTT)
+        #        'Vis/MaxDepth': '5.0',         # Increased slightly to see further
+        #        'Reg/Force3DoF': 'False',
+        #        'Odom/ResetCountdown': '1',    # NEW: If lost, try to reset immediately
+        #    }],
+        #    remappings=[
+        #        ('rgb/image', '/camera/image_bgr'),         # Input RGB
+        #        ('depth/image', '/depth/image_raw'),        # Input AI Depth
+        #        ('rgb/camera_info', '/camera/camera_info'), # Input Calibration
+        #        ('odom', '/odom')                           # Output Topic
+        #    ]
+        #),
 
         # ====================================================
         # 3D MAPPING (OCTOMAP)
@@ -241,7 +259,7 @@ def generate_launch_description():
                 
                 # FILTERING (Critical for Underwater)
                 'sensor_model/hit': 0.7,           # Confidence increase if obstacle seen
-                'sensor_model/miss': 0.4,          # Confidence decrease if empty space seen
+                'sensor_model/miss': 0.2,          # Confidence decrease if empty space seen
                 'sensor_model/min': 0.12,          # Clamp min probability
                 'sensor_model/max': 0.97,          # Clamp max probability
                 

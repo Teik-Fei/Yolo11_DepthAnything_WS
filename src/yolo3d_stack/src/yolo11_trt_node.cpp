@@ -873,6 +873,50 @@ private:
         } catch (...) {}
     }
 
+    // --- UNDERWATER ENHANCEMENT HELPER ---
+    cv::Mat preprocess_underwater(const cv::Mat& input) {
+        cv::Mat output;
+        
+        // 1. SIMPLE WHITE BALANCE (Gray World Assumption)
+        // This boosts the Red channel to compensate for water absorption
+        std::vector<cv::Mat> channels;
+        cv::split(input, channels);
+        
+        float b_mean = cv::mean(channels[0])[0];
+        float g_mean = cv::mean(channels[1])[0];
+        float r_mean = cv::mean(channels[2])[0];
+        
+        // Find the average gray value
+        float gray_mean = (b_mean + g_mean + r_mean) / 3.0f;
+        
+        // Apply gain to balance channels (avoiding divide by zero)
+        if (b_mean > 0 && g_mean > 0 && r_mean > 0) {
+            channels[0] = channels[0] * (gray_mean / b_mean); // Blue
+            channels[1] = channels[1] * (gray_mean / g_mean); // Green
+            channels[2] = channels[2] * (gray_mean / r_mean); // Red
+        }
+        cv::merge(channels, output);
+        
+        // 2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        // We apply this ONLY to the Lightness channel (L) of LAB color space
+        // This improves contrast without messing up the colors further.
+        cv::Mat lab_image;
+        cv::cvtColor(output, lab_image, cv::COLOR_BGR2Lab);
+        
+        std::vector<cv::Mat> lab_planes(3);
+        cv::split(lab_image, lab_planes);
+        
+        // ClipLimit 2.0 = Moderate contrast boost (Go higher for murky water)
+        // TileGridSize 8x8 = Standard block size
+        auto clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+        clahe->apply(lab_planes[0], lab_planes[0]);
+        
+        cv::merge(lab_planes, lab_image);
+        cv::cvtColor(lab_image, output, cv::COLOR_Lab2BGR);
+        
+        return output;
+    }
+
     void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
         rclcpp::Time now = this->now();
     
@@ -893,7 +937,12 @@ private:
 
         cv_bridge::CvImageConstPtr cv_ptr;
         try { cv_ptr = cv_bridge::toCvShare(msg, "bgr8"); } catch (...) { return; }
-        cv::Mat frame = cv_ptr->image;
+        
+        // 1. Get Raw Frame
+        cv::Mat raw_frame = cv_ptr->image;
+        
+        // 2. Apply Underwater Enhancement
+        cv::Mat frame = preprocess_underwater(raw_frame); 
 
         // Init Messages (Fixed: These were missing!)
         vision_msgs::msg::Detection2DArray msg_2d; 

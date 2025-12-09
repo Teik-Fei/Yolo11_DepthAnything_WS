@@ -284,7 +284,6 @@ private:
         if (accumulated_.empty()) {
             accumulated_ = depth_resized.clone();
         } else {
-            //cv::addWeighted(depth_resized, alpha_, accumulated_, 1.0-alpha_, 0.0, accumulated_);
             accumulated_ = depth_resized.clone();
         }
 
