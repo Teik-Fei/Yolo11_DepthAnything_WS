@@ -224,6 +224,7 @@ python3 src/yolo3d_stack/yolo3d_stack/fake_driver.py
 
 As you "move" the robot, the static camera view will be painted into the 3D map (creating a tunnel effect), confirming that mapping is working.
 
+=======
 ## **⚙️ Configuration & Tuning**
 1. Underwater Camera Calibration (`params.yaml`)  
 Light refracts differently in water. Standard air calibration **will fail.**
@@ -296,4 +297,8 @@ To upgrade from Visual Odometry to a full Navigation Grade system, integrate the
 
 * **Input 3**: IMU (Orientation / Gyro)
 
+<<<<<<< HEAD
 * **Input 4**: Depth Sensor (Z Position)
+=======
+* **Input 4**: Depth Sensor (Z Position)
+>>>>>>> b05259e8aeecb0ea4ba5af92e82a230c99e1c060
