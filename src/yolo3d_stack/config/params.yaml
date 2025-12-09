@@ -16,6 +16,22 @@ yolo11_node:
     cx : 346.7216404016699
     cy : 239.7857718290915
 
+# MOdified Node 1: YOLOv11 TensorRT Object Detection (Performs 2D -> 3D Projection)
+yolo11_trt:  # <--- MATCH THIS with your launch file node name
+  ros__parameters:
+    camera_topic: "/camera/image_raw"
+    depth_topic: "/depth/image_raw"
+    
+    engine_path: "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine" 
+    
+    confidence_threshold: 0.75
+    
+    # Intrinsics
+    fx : 555.715735370142
+    fy : 555.6151962989876
+    cx : 346.7216404016699
+    cy : 239.7857718290915
+
 
 # Node 2: Depth Anything V2 (Generates Depth Map)
 depth_anything_node:

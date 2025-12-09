@@ -615,6 +615,8 @@ public:
         obstacle_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/yolo/obstacle_cloud", 10);
         // Add this line
         visual_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/yolo/masked_cloud", 10);
+
+        last_frame_time_ = this->now();
     }
 
 private:
@@ -649,6 +651,8 @@ private:
     
     std::map<int, std::deque<float>> depth_history_;
     const int smooth_window_ = 3; 
+    rclcpp::Time last_frame_time_;
+    float current_fps_ = 0.0f;
 
     // --- Helper: Decode Masks ---
     cv::Mat process_mask(const std::vector<float>& coeffs, const float* proto_masks, cv::Rect box, cv::Size img_size) {
@@ -870,6 +874,23 @@ private:
     }
 
     void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
+        rclcpp::Time now = this->now();
+    
+        // Safety Check: Ensure clock types match before math
+        if (last_frame_time_.get_clock_type() != now.get_clock_type()) {
+            last_frame_time_ = now; // Reset if types mismatch
+            return; // Skip FPS for first frame
+        }
+
+        double dt = (now - last_frame_time_).seconds();
+    
+        if (dt > 0.0) {
+            float instantaneous_fps = 1.0f / dt;
+            if (current_fps_ == 0.0f) current_fps_ = instantaneous_fps;
+            else current_fps_ = 0.9f * current_fps_ + 0.1f * instantaneous_fps;
+        }
+        last_frame_time_ = now;
+
         cv_bridge::CvImageConstPtr cv_ptr;
         try { cv_ptr = cv_bridge::toCvShare(msg, "bgr8"); } catch (...) { return; }
         cv::Mat frame = cv_ptr->image;
@@ -1020,6 +1041,17 @@ private:
             }
         }
 
+        if(visualize_) {
+            std::string fps_text = "FPS: " + std::to_string((int)current_fps_);
+        
+            // Shadow
+            cv::putText(debug_img, fps_text, cv::Point(12, 32), 
+                        cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 4);
+            // Text
+            cv::putText(debug_img, fps_text, cv::Point(10, 30), 
+                        cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);
+        }
+
         det2d_pub_->publish(msg_2d);
         // Publish the CLEAN visual cloud (Replacing the V-Shape)
         if (!depth_copy.empty()) {
@@ -1033,7 +1065,20 @@ private:
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<Yolo11TrtNode>());
+    
+    try {
+        // Try to start the node
+        auto node = std::make_shared<Yolo11TrtNode>();
+        rclcpp::spin(node);
+    } 
+    catch (const std::exception& e) {
+        // If it crashes, print WHY
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "NODE CRASHED: %s", e.what());
+    }
+    catch (...) {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "NODE CRASHED: Unknown exception");
+    }
+
     rclcpp::shutdown();
     return 0;
 }

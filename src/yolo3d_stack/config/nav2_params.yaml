@@ -1,7 +1,7 @@
 costmap:
   costmap:
     ros__parameters:
-      global_frame: map
+      global_frame: odom           # Must be fixed frame
       robot_base_frame: base_link
       update_frequency: 5.0
       publish_frequency: 2.0
@@ -12,10 +12,28 @@ costmap:
       
       plugins: ["obstacle_layer", "inflation_layer"]
       
+      #obstacle_layer:
+      #  plugin: "nav2_costmap_2d::ObstacleLayer"
+      #  enabled: True
+      #  observation_sources: yolo_cloud
+      #  yolo_cloud:
+      #    topic: /yolo/obstacle_cloud
+      #    sensor_frame: camera_link_optical
+      #    data_type: "PointCloud2"
+      #    clearing: True
+      #   marking: True
+      #    raytrace_range: 20.0
+      #    obstacle_range: 15.0
+      #    min_obstacle_height: -2.0  # Allow points below the robot
+      #    max_obstacle_height: 2.0   # Allow points above the robot
+
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: yolo_cloud
+        # CHANGE 1: Add 'octomap_voxels' to the list of sources
+        observation_sources: yolo_cloud octomap_voxels 
+        
+        # Keep your existing YOLO config (Safety Bubble)
         yolo_cloud:
           topic: /yolo/obstacle_cloud
           sensor_frame: camera_link_optical
@@ -24,8 +42,19 @@ costmap:
           marking: True
           raytrace_range: 20.0
           obstacle_range: 15.0
-          min_obstacle_height: -2.0  # Allow points below the robot
-          max_obstacle_height: 2.0   # Allow points above the robot
+          min_obstacle_height: -2.0
+          max_obstacle_height: 2.0
+        
+        # CHANGE 2: Define the new source (The Memory Map)
+        octomap_voxels:
+          topic: /octomap_point_cloud_centers   # The blue/colored blocks
+          sensor_frame: odom                    # Octomap publishes in the fixed frame
+          data_type: "PointCloud2"
+          clearing: False   # Don't let the map clear itself (safety)
+          marking: True     # Do mark obstacles
+          raytrace_range: 50.0
+          obstacle_range: 50.0
+          max_obstacle_height: 5.0
           
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -39,7 +68,7 @@ costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      global_frame: map           # Must be fixed frame
+      global_frame: odom           # Must be fixed frame
       robot_base_frame: base_link
       update_frequency: 1.0       # Slower update is fine
       publish_frequency: 1.0
@@ -48,27 +77,56 @@ global_costmap:
       height: 50.0
       resolution: 0.05
       
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      #plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "inflation_layer"]
 
       # Optional: If you have a map.pgm/yaml, keep this. If not, remove "static_layer" from plugins
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       
+      #obstacle_layer:
+      #  plugin: "nav2_costmap_2d::ObstacleLayer"
+      # enabled: True
+      #  observation_sources: yolo_cloud
+      #  yolo_cloud:
+      #    topic: /yolo/obstacle_cloud
+      #    sensor_frame: camera_link_optical
+      #   data_type: "PointCloud2"
+      #    clearing: False         # <--- THE MAGIC SAUCE: Never forget
+      #    marking: True
+      #    obstacle_range: 15.0
+      #    raytrace_range: 20.0
+      #    min_obstacle_height: -2.0  # Allow points below the robot
+      #   max_obstacle_height: 2.0   # Allow points above the robot
+
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: yolo_cloud
+        # CHANGE 3: Add 'octomap_voxels' here too
+        observation_sources: yolo_cloud octomap_voxels
+        
         yolo_cloud:
           topic: /yolo/obstacle_cloud
           sensor_frame: camera_link_optical
           data_type: "PointCloud2"
-          clearing: False         # <--- THE MAGIC SAUCE: Never forget
+          clearing: False
           marking: True
           obstacle_range: 15.0
           raytrace_range: 20.0
-          min_obstacle_height: -2.0  # Allow points below the robot
-          max_obstacle_height: 2.0   # Allow points above the robot
+          min_obstacle_height: -2.0
+          max_obstacle_height: 2.0
+
+        # CHANGE 4: Define the source again
+        octomap_voxels:
+          topic: /octomap_point_cloud_centers
+          sensor_frame: odom
+          data_type: "PointCloud2"
+          clearing: False
+          marking: True
+          obstacle_range: 50.0
+          raytrace_range: 50.0
+          max_obstacle_height: 5.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

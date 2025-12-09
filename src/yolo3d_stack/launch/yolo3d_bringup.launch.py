@@ -51,11 +51,30 @@ def generate_launch_description():
                 'image_width': 640,
                 'image_height': 480,
                 'pixel_format': 'yuyv',
-                'frame_id': 'camera_link_optical' 
+                'frame_id': 'camera_link_optical',
+                'camera_info_url': 'package://yolo3d_stack/config/calibration.yaml'
             }],
             remappings=[
-                ('image_raw', '/camera/image_raw')
+                ('image_raw', '/camera/image_raw'),
+                # ENSURE THIS REMAPPING EXISTS SO RTABMAP FINDS IT:
+                ('camera_info', '/camera/camera_info')
             ],
+            output='screen'
+        ),
+
+        # 1. YUYV -> BGR Converter (Fixes Odometry)
+        Node(
+            package='yolo3d_stack',
+            executable='image_converter_node', # Make sure this matches your build name!
+            name='image_converter',
+            output='screen'
+        ),
+
+        # 2. PointCloud Cleaner (Fixes OctoMap Crash)
+        Node(
+            package='yolo3d_stack',
+            executable='cloud_cleaner_node',   # Make sure this matches your build name!
+            name='cloud_cleaner',
             output='screen'
         ),
 
@@ -63,7 +82,7 @@ def generate_launch_description():
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            arguments = ['0', '0', '1.0', '0', '0', '0', 'map', 'base_link']
+            arguments = ['0', '0', '1.0', '0', '0', '0', 'odom', 'base_link']
         ),
 
         # ====================================================
@@ -170,6 +189,68 @@ def generate_launch_description():
             remappings=[
                 ('/costmap/get_state', '/costmap/get_state'),
                 ('/costmap/change_state', '/costmap/change_state')
+            ]
+        ),
+
+        # ====================================================
+        # VISUAL ODOMETRY (The "GPS" for your map)
+        # ====================================================
+        Node(
+            package='rtabmap_odom',
+            executable='rgbd_odometry',
+            name='visual_odometry',
+            output='screen',
+            parameters=[{
+                'frame_id': 'base_link',
+                'odom_frame_id': 'odom',
+                'publish_tf': True,
+                'approx_sync': True,
+                'approx_sync_max_interval': 0.3, # 0.3s is perfect for AI lag
+                'wait_for_transform': 0.3,
+                'queue_size': 50,
+
+                # --- Tuning Fixes ---
+                'Odom/Strategy': '1',          # CHANGED: Frame-to-Frame (Much more stable startup)
+                'Vis/MinInliers': '8',         # CHANGED: Lower threshold to accept more frames
+                'Vis/FeatureType': '2',        # CHANGED: ORB (Better general performance than GFTT)
+                'Vis/MaxDepth': '5.0',         # Increased slightly to see further
+                'Reg/Force3DoF': 'False',
+                'Odom/ResetCountdown': '1',    # NEW: If lost, try to reset immediately
+            }],
+            remappings=[
+                ('rgb/image', '/camera/image_bgr'),         # Input RGB
+                ('depth/image', '/depth/image_raw'),        # Input AI Depth
+                ('rgb/camera_info', '/camera/camera_info'), # Input Calibration
+                ('odom', '/odom')                           # Output Topic
+            ]
+        ),
+
+        # ====================================================
+        # 3D MAPPING (OCTOMAP)
+        # ====================================================
+        Node(
+            package='octomap_server',
+            executable='octomap_server_node',
+            name='octomap_server',
+            output='screen',
+            parameters=[{
+                'resolution': 0.1,                 # Voxel size (10cm cubes)
+                'frame_id': 'odom',                 # Global frame
+                'base_frame_id': 'base_link',      # Robot frame
+                'sensor_model/max_range': 5.0,     # Ignore depth noise > 5m
+                
+                # FILTERING (Critical for Underwater)
+                'sensor_model/hit': 0.7,           # Confidence increase if obstacle seen
+                'sensor_model/miss': 0.4,          # Confidence decrease if empty space seen
+                'sensor_model/min': 0.12,          # Clamp min probability
+                'sensor_model/max': 0.97,          # Clamp max probability
+                
+                'filter_ground': False,            # Set True if you want to remove the sea floor
+                # --- FIX TIMING ISSUES ---
+                'transform_tolerance': 0.5,      # Allow 0.5s lag
+            }],
+            remappings=[
+                ('cloud_in', '/yolo/masked_cloud')  # Listen to your virtual LiDAR
             ]
         ),
 

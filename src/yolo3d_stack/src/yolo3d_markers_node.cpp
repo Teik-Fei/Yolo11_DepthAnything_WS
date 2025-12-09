@@ -122,8 +122,8 @@ private:
             m.color.r = 0.0; m.color.g = 1.0; m.color.b = 0.0; m.color.a = 0.6;
             
             // Lifetime: 0 = Infinite (Stays forever until you restart RViz)
-            // Set to 5.0 if you want them to fade after 5 seconds
-            m.lifetime = rclcpp::Duration(5.0, 0); 
+            // Set to 1.0 if you want them to fade after 1 seconds
+            m.lifetime = rclcpp::Duration(1.0, 0); 
 
             arr.markers.push_back(m);
 
