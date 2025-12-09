@@ -1,124 +1,184 @@
-# YOLO11 + Depth Anything V2 + 3D Fusion (ROS 2 Humble)
+# 🌊 YOLO11-Seg + Depth Anything + Octomap Fusion (ROS 2 Humble)
 
 ![ROS2](https://img.shields.io/badge/ROS2-Humble-blue)
 ![Platform](https://img.shields.io/badge/Platform-Jetson%20Orin-green)
 ![Acceleration](https://img.shields.io/badge/Acceleration-TensorRT%20%7C%20CUDA-orange)
 
-A high-performance Perception Stack for ROS 2 developed for **Autonomous Underwater Vehicles (AUV)** but applicable to any robot.
+A complete **3D Perception, Mapping, and Navigation Stack** for Autonomous Underwater Vehicles (AUVs).
 
-This stack fuses **YOLO11 (TensorRT)** 2D object detection with **Depth Anything V2 (CUDA)** monocular depth estimation to create a real-time **3D Spatial Awareness** system. It outputs 3D bounding boxes, a dense PointCloud, and a top-down "Sonar-style" Bird's Eye View (BEV) map.
+This package upgrades standard 2D detection into a full **volumetric navigation system**. It fuses **YOLO11-Seg (Instance Segmentation)** with **Depth Anything V2** to create precise 3D object clouds, builds a persistent voxel map using **Octomap**, and feeds it directly into **Nav2** for obstacle avoidance.
+
+---
 
 ## ✨ Key Features
-* **🚀 TensorRT Accelerated:** YOLO11 runs on the GPU using TensorRT 10.x for real-time inference.
-* **🌊 Monocular Depth:** Uses "Depth Anything V2" (Small) via OpenCV CUDA to estimate distance from a single camera.
-* **⚖️ Temporal Smoothing:** Implements Exponential Moving Average (EMA) filtering to stabilize depth jitter.
-* **📡 AUV Radar/BEV Map:** Generates a top-down, distance-ringed view of detected objects (Sonar style) for navigation.
-* **🧊 3D Visualization:** Projects 2D detections into 3D space for RViz markers and point clouds.
 
-## 🛠️ Hardware & Software Requirements
-* **Platform:** NVIDIA Jetson Orin Nano / Orin NX (or generic PC with NVIDIA GPU)
-* **OS:** Ubuntu 22.04 (ROS 2 Humble)
-* **Drivers:** CUDA 11.4+, TensorRT 8.6+ (JetPack 6.x recommended)
-* **Camera:** USB Camera (e.g., Logitech C270) or CSI Camera
+### 👁️ Perception
+* **Instance Segmentation:** Uses YOLO11-Seg to create precise masks (not just boxes) of underwater objects.
+* **Masked Depth Cloud:** Projects *only* the object's pixels into 3D space, ignoring background noise.
+* **Underwater Preprocessing:** Includes real-time **CLAHE** & **White Balance** to restore color and contrast in murky water.
+
+### 🧠 Mapping & Memory
+* **Volumetric Mapping (Octomap):** Builds a persistent 3D voxel grid. The robot "remembers" walls and gates even when it turns away.
+* **Visual Odometry:** Integrated **RTAB-Map** for position tracking without external GPS/DVL.
+
+### 🧭 Navigation
+* **Nav2 Integration:** Custom costmap layers that respect both:
+    * **Reflex:** Instant "Safety Bubbles" from YOLO detections.
+    * **Memory:** Persistent obstacles from Octomap.
+
+---
+
+## 🛠️ System Requirements
+* **Hardware:** NVIDIA Jetson Orin NX.
+* **OS:** Ubuntu 22.04 (ROS 2 Humble).
+* **Camera:** USB Camera (Calibrated for underwater usage).
+* **Power:** Requires **15W Mode** (`sudo nvpmodel -m 1`) or a high-current battery (5A+) to prevent throttling.
+
+---
 
 ## 📦 Installation
 
-1.  **Clone the Repository**
+1.  **Clone & Install Dependencies**
     ```bash
     mkdir -p ~/yolo3d_ws/src
     cd ~/yolo3d_ws/src
     git clone <https://github.com/Teik-Fei/Yolo11_DepthAnything_WS.git>
+    
+    # Install ROS packages
+    sudo apt install ros-humble-octomap-server ros-humble-rtabmap-odom ros-humble-nav2-bringup ros-humble-pcl-conversions
     ```
 
-2.  **Install Dependencies**
-    ```bash
-    sudo apt install ros-humble-vision-msgs ros-humble-image-transport ros-humble-cv-bridge ros-humble-usb-cam
-    sudo pip3 install ultralytics onnxruntime-gpu
-    ```
-
-3.  **Model Preparation**
-    * **YOLO11:** Export your model to TensorRT engine:
+2.  **Model Preparation**
+    You need **two** TensorRT engines:
+    * **YOLO11-Seg:** Export your segmentation model:
         ```bash
-        yolo export model=yolo11n.pt format=engine half=True device=0
+        yolo export model=yolo11n-seg.pt format=engine half=True device=0
         ```
-    * **Depth Anything:** Ensure you have the `.onnx` model (e.g., `depth_anything_v2_vits.onnx`).
+    * **Depth Anything V2:** Convert the ONNX model using `trtexec`:
+        ```bash
+        /usr/src/tensorrt/bin/trtexec --onnx=depth_anything_v2_vits.onnx --saveEngine=depth_anything_v2_vits_fp16.engine --fp16
+        ```
 
-4.  **Build**
+3.  **Build**
     ```bash
     cd ~/yolo3d_ws
-    colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select yolo3d_stack
+    colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
     source install/setup.bash
     ```
 
+---
+
 ## 🚀 Usage
 
-**Launch the full stack (Camera + YOLO + Depth + Visualization):**
+### 1. The "Master Switch" (Pool Mode)
+To run the full stack (Drivers + Perception + Mapping + Odometry):
 ```bash
 ros2 launch yolo3d_stack yolo3d_bringup.launch.py
 ```
+---
 
-### 🖥️ Visualization
+## 2. Modes of Operation
+You can edit `yolo3d_bringup.launch.py` to switch modes:
 
-The launch file automatically opens **RViz2** with a pre-configured view.
+* **Bench Test (Dry):**
 
-* **3D View:** Displays the dense PointCloud (colored by depth) and Green 3D Bounding Boxes around detected objects.
-* **BEV Panel (Radar):** A top-down "Sonar-style" view on the topic `/fusion/bev`. This shows the robot at the bottom center and objects plotted on a distance grid.
-* **Debug View:** A 2D camera feed with bounding boxes, class names, and estimated distances overlayed on the topic `/yolo/debug_image`.
+    * Enable static_transform_publisher (Lines 70-75).
 
-### ⚙️ Configuration (`params.yaml`)
+    * Disable rtabmap_odom.
 
-Configuration is managed in `src/yolo3d_stack/config/params.yaml`.
+    * Result: Robot stays at (0,0,0) but mapping works for testing.
 
-### 1. Depth Calibration (Critical)
-The "Depth Anything" model provides relative depth. You **must** tune the `depth_factor` to match your specific camera and environment (water vs. air refraction).
+* **Pool Test (Wet):**
 
-**Calibration Steps:**
-1.  Place an object exactly **2.0 meters** away from the camera.
-2.  Check the distance shown in the Debug View or BEV map.
-3.  Update the factor using: `New_Factor = Current_Factor * (Real_Dist / Seen_Dist)`
+* Disable static_transform_publisher.
+
+* Enable rtabmap_odom (Lines 180+).
+
+* Result: Robot tracks its own movement using floor texture.
+---
+
+## **🖥️ Visualization Guide (RViz)**
+The system outputs multiple layers of reality:
+
+1. 🟣 Purple Spheres: Instant YOLO detections (Safety Bubbles).
+
+2. 🟦 Blue/Colored Blocks: Octomap Voxels (Long-term memory).
+
+3. ⬜ White Dots: Masked 3D PointCloud (Precise object shape).
+
+4. 🟩 Green Box: Real-time 2D detection overlay (/yolo/debug_image).
+---
+
+## **⚙️ Configuration & Tuning**
+1. Underwater Camera Calibration (`params.yaml`)  
+Light refracts differently in water. Standard air calibration **will fail.**
 
 ```yaml
-depth_anything_node:
+yolo11_trt:
   ros__parameters:
-    depth_factor: 4.0  # Increase if reading is too close, decrease if too far
-    input_width: 518   # Model input size (do not change for Small model)
+    # Approximate 1.33x zoom effect of water
+    fx: 740.5 
+    fy: 740.5
+    # Lower confidence for murky water
+    confidence_threshold: 0.50
 ```
 
-### 2. AUV Radar / BEV Settings   
-Adjust the "Bird's Eye View" grid to change the scale of the map.
-```yaml
-fusion_bev_node:
-  ros__parameters:
-    meters_to_pixels: 100.0 # Scale: 100 pixels = 1 meter
-    bev_size: 600           # Output image size: 600x600 pixels
-```
-### 📊 Performance Monitoring
-To verify that YOLO and Depth models are running on the GPU (Hardware Acceleration), use `jtop` (part of `jetson-stats`).
-**Installation**
-```bash
-sudo pip3 install -U jetson-stats
-```
-**Check Status**: Run `jtop` and switch to the **GPU** tab.
+## **Navigation Safety (`nav2_params.yaml`)**
+* Inflation Radius: Set to 0.5 to keep the robot 50cm away from any blue block.
 
-Look for processes `yolo11_trt_node` and `depth_anything_node`.
+* Observation Sources: Ensure octomap_voxels is listed so the robot respects the memory map.
 
-Ensure the Type column shows `G` (GPU).
+---
 
-If Type shows `C` (CPU), check your CUDA/TensorRT installation.
+## 🧩 Nodes Description
 
-### 🧩 Nodes Description
-| Node Name            | Function                                                                                                 |
-|---------------------|-----------------------------------------------------------------------------------------------------------|
-| `usb_cam`             | Publishes the raw RGB camera feed from `/dev/video0`.                                                     |
-| `yolo11_trt_node`     | Performs object detection using TensorRT. Publishes 2D boxes + computes 3D coordinates using depth map.    |
-| `depth_anything_node` | Runs Depth Anything V2 using OpenCV CUDA and applies EMA filtering for stability.                         |
-| `fusion_bev_node`     | Generates the Bird’s-Eye “Radar/Sonar” map from fused 3D detections.                                      |
-| `depth_to_pointcloud`| Converts the depth image into a `sensor_msgs/PointCloud2` for rendering in RViz.                          |
-| `yolo3d_markers`      | Publishes RViz Marker cubes to visualize 3D bounding boxes in real-time.                                  |
+| Node Name | Role | Function |
+| :--- | :--- | :--- |
+| **`yolo11_trt_node`** | **Perception Core** | Runs YOLO11-Seg (TensorRT). Performs underwater preprocessing (CLAHE), extracts 3D coordinates, and publishes the **Masked PointCloud** for mapping. |
+| **`depth_anything_trt_node`** | **Depth Engine** | Runs Depth Anything V2 (TensorRT) to generate a high-quality depth map from the monocular RGB camera. |
+| **`octomap_server`** | **Mapping** | Consumes the masked point cloud to build the persistent **3D Voxel Map** (Blue Blocks) used for navigation memory. |
+| **`rtabmap_odom`** | **Localization** | Performs **Visual Odometry**. Tracks the robot's movement relative to the pool floor to publish the `odom` → `base_link` transform. |
+| **`nav2_costmap`** | **Navigation** | Manages the **Global** and **Local** costmaps. It marks the blue Octomap blocks as "Lethal Obstacles" so the robot avoids them. |
+| **`fusion_bev_node`** | **Visualization** | Generates the top-down "Sonar-style" **Bird's Eye View** image (`/fusion/bev`) for operator awareness. |
+| **`yolo3d_markers_node`** | **Visualization** | Publishes the **Green 3D Bounding Boxes** and text labels in RViz. |
+| **`usb_cam`** | **Driver** | Interacts with the hardware camera (`/dev/video0`) to publish raw images. |
+| **`image_converter_node`** | **Utility** | Converts raw YUYV camera images to BGR8 format to ensure compatibility with TensorRT and RTAB-Map. |
+
+---
+
+## 📐 TF Tree (Coordinate Frames)
+
+Understanding the coordinate frames is crucial for navigation.
+
+| Parent Frame | Child Frame | Publisher | Description |
+| :--- | :--- | :--- | :--- |
+| **`map`** | **`odom`** | `static_transform_publisher` | The global reference frame. Currently static (0,0,0) for local pool testing. |
+| **`odom`** | **`base_link`** | `rtabmap_odom` (or static) | **The Critical Link.** Represents the robot moving in the pool. Visual Odometry publishes this update. |
+| **`base_link`** | **`camera_link`** | `robot_state_publisher` | Defined in `URDF`. The mounting position of the camera relative to the robot's center. |
+| **`camera_link`** | **`camera_link_optical`** | `robot_state_publisher` | Handles the rotation from standard ROS coordinates (X-forward) to Camera coordinates (Z-forward). |
+| **`base_link`** | **`scan`** | `pointcloud_to_laserscan` | Virtual laser frame. Projects the 3D depth cloud into a flat 2D slice for simple obstacle avoidance. |
+
+---
+
+## 🔧 Troubleshooting
+
+| Issue | Cause | Fix |
+| :--- | :--- | :--- |
+| **"System Throttled" Warning** | Jetson is drawing too much power (Over-current). | Run `sudo nvpmodel -m 1` to switch to 15W Mode. |
+| **Robot Glitches / Teleports** | TF Conflict: You have two nodes publishing `odom` → `base_link`. | Disable `static_transform_publisher` in the launch file when running Visual Odometry. |
+| **Map is Empty (No Blocks)** | Octomap is filtering out the pool floor as "ground". | Set `filter_ground: false` in `octomap_mapping.launch.py`. |
+| **YOLO Detects Nothing** | Underwater color absorption is confusing the model. | Enable `preprocess_underwater` in `yolo11_trt_node.cpp` (CLAHE + White Balance). |
+| **Low FPS (< 5)** | Input resolution is too high for the Jetson. | In `launch.py`, change `input_width` to `640` or reduce framerate to `5.0`. |
+| **Objects in Wrong Place** | Camera intrinsics are calibrated for air, not water. | Multiply your air `fx` and `fy` parameters by **1.33** in `params.yaml`. |
 
 
+## **🔮 Future Roadmap: Sensor Fusion**
+To upgrade from Visual Odometry to a full Navigation Grade system, integrate the **Robot Localization** package:
 
+* **Input 1**: Visual Odometry (X, Y Position)
 
+* **Input 2**: DVL (X, Y Velocity)
 
+* **Input 3**: IMU (Orientation / Gyro)
 
-
+* **Input 4**: Depth Sensor (Z Position)
