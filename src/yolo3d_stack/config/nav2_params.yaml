@@ -2,50 +2,58 @@ costmap:
   costmap:
     ros__parameters:
       # Frame Settings
-      global_frame: odom        # The fixed world frame
-      robot_base_frame: base_link # The robot itself
+      global_frame: odom
+      robot_base_frame: base_link
       use_sim_time: False
       
-      # Performance Tuning (Lower freq = Less CPU usage)
-      update_frequency: 5.0     # How often to update the map (Hz)
-      publish_frequency: 2.0    # How often to send to RViz (Hz)
-      rolling_window: true      # Keep map centered on robot (Local Map)
-      width: 10                 # Map width (meters)
-      height: 10                # Map height (meters)
-      resolution: 0.1           # Grid size (10cm boxes)
+      # Performance
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      rolling_window: true
+      width: 10
+      height: 10
+      resolution: 0.1
       
-      # The Layers: What makes up the map?
-      plugins: ["obstacle_layer", "inflation_layer"]
+      # --- CHANGE 1: Add 'static_layer' to the list ---
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
 
-      # Layer 1: OBSTACLES (The raw data)
+      # --- CHANGE 2: Define the Static Layer (The Memory) ---
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /projected_map   # <--- The output of OctoMap
+        subscribe_to_updates: true  # <--- Vital! Updates the map as you explore
+        use_maximum: false          # False = overwrite, True = keep highest cost
+        lethal_cost_threshold: 100
+
+      # Layer 2: Live Obstacles (The Reflexes)
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: scan_source yolo_source
 
-        # Source A: Your Virtual Laser (Good for Walls)
+        # Source A: Virtual Laser
         scan_source:
           topic: /scan
           max_obstacle_height: 2.0
-          clearing: True   # If the laser sees "nothing", clear the map
-          marking: True    # If the laser hits something, mark it
+          clearing: True
+          marking: True
           data_type: "LaserScan"
           raytrace_max_range: 5.0
           obstacle_max_range: 4.5
           inf_is_valid: true
 
-        # Source B: Your YOLO Detections (Good for Specific Objects)
+        # Source B: YOLO Detections
         yolo_source:
           topic: /yolo/obstacle_cloud
           max_obstacle_height: 2.0
-          clearing: False  # YOLO only ADDS obstacles, it doesn't clear empty space
+          clearing: False
           marking: True
           data_type: "PointCloud2"
           obstacle_max_range: 5.0
-          min_obstacle_height: -2.0 # Underwater objects might be below "0"
+          min_obstacle_height: -2.0
 
-      # Layer 2: INFLATION (The safety buffer)
+      # Layer 3: Inflation (The Safety Bubble)
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0  # Higher = cost drops faster (sharper danger zones)
-        inflation_radius: 0.6     # Robot Radius + Safety Margin (meters)
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.6
