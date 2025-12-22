@@ -155,24 +155,60 @@ def generate_launch_description():
         ),
 
         # PointCloud -> LaserScan - THE SLICER (Virtual LiDAR)
+        #Node(
+        #    package='pointcloud_to_laserscan',
+        #    executable='pointcloud_to_laserscan_node',
+        #    name='pointcloud_to_laserscan',
+        #    remappings=[
+        #        ('cloud_in', '/depth/pointcloud'),
+        #        ('scan', '/scan')
+        #    ],
+        #    parameters=[{
+        #        'target_frame': 'base_link', # Projects scan onto the robot base
+        #        'transform_tolerance': 0.01,
+        #        'min_height': -3.0, # Floor cut-off (relative to camera height) [might need to fine tune this based on diff settings]
+        #        'max_height': 3.0,  # Ceiling cut-off [might need to fine tune this based on diff settings]
+        #        'angle_min': -1.57, # -90 deg
+        #        'angle_max': 1.57,  # +90 deg
+        #        'range_min': 0.5,   # Ignore noise right in front of lens
+        #        'range_max': 5.0,   # Max reliable range
+        #        'use_inf': True
+        #    }]
+        #),
+
+        # ====================================================
+        # REPLACEMENT: VIRTUAL LASERSCAN (Fast & Clean)
+        # ====================================================
+        
+        # 1. The TF Fix: Rotates the scan 90deg so it lays flat on the "floor"
+        #    Connects 'camera_link_optical' -> 'virtual_laser_frame'
+        #    Args: x y z yaw pitch roll
         Node(
-            package='pointcloud_to_laserscan',
-            executable='pointcloud_to_laserscan_node',
-            name='pointcloud_to_laserscan',
-            remappings=[
-                ('cloud_in', '/depth/pointcloud'),
-                ('scan', '/scan')
-            ],
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='virtual_laser_tf',
+            arguments=['0', '0', '0', '0', '0', '1.57', 'camera_link_optical', 'virtual_laser_frame'],
+            output='screen'
+        ),
+
+        # 2. The Node: Slices the Depth Image into a LaserScan
+        Node(
+            package='yolo3d_stack',
+            executable='virtual_laserscan_node',
+            name='virtual_laserscan_node',
+            output='screen',
             parameters=[{
-                'target_frame': 'base_link', # Projects scan onto the robot base
-                'transform_tolerance': 0.01,
-                'min_height': -3.0, # Floor cut-off (relative to camera height) [might need to fine tune this based on diff settings]
-                'max_height': 3.0,  # Ceiling cut-off [might need to fine tune this based on diff settings]
-                'angle_min': -1.57, # -90 deg
-                'angle_max': 1.57,  # +90 deg
-                'range_min': 0.5,   # Ignore noise right in front of lens
-                'range_max': 5.0,   # Max reliable range
-                'use_inf': True
+                'depth_topic': '/depth/image_raw',
+                'scan_topic':  '/scan',
+                'scan_height': 10,       # Slice thickness (pixels)
+                'scan_line_idx': -1,     # -1 = Center of image
+                'min_range': 0.2,
+                'max_range': 5.0,       # Max valid range (meters)
+                
+                # IMPORTANT: Match these to your Depth/Camera params!
+                # (Using the values seen in your depth_to_pointcloud config)
+                'fx': 650.0,
+                'cx': 320.0
             }]
         ),
 
@@ -268,7 +304,7 @@ def generate_launch_description():
                 'transform_tolerance': 0.5,      # Allow 0.5s lag
             }],
             remappings=[
-                ('cloud_in', '/yolo/masked_cloud')  # Listen to your virtual LiDAR
+                ('cloud_in', '/depth/pointcloud_filtered')
             ]
         ),
 

@@ -183,6 +183,7 @@ add_executable(yolo3d_markers_node          src/yolo3d_markers_node.cpp)
 add_executable(depth_anything_trt_node      src/depth_anything_trt_node.cpp)
 add_executable(image_converter_node         src/image_converter_node.cpp)
 add_executable(cloud_cleaner_node           src/cloud_cleaner_node.cpp)
+add_executable(virtual_laserscan_node       src/virtual_laserscan_node.cpp)
 
 # LINK LIBS
 foreach(target 
@@ -193,13 +194,14 @@ foreach(target
     yolo3d_markers_node
     depth_anything_trt_node
     image_converter_node
-    cloud_cleaner_node)
+    cloud_cleaner_node
+    virtual_laserscan_node)
 
     ament_target_dependencies(${target}
         rclcpp sensor_msgs std_msgs
         cv_bridge vision_msgs visualization_msgs
         image_transport message_filters pcl_conversions
-        pcl_ros tf2_geometry_msgs tf2_ros PCL
+        pcl_ros tf2_geometry_msgs tf2_ros PCL OpenCV
     )
 
     target_link_libraries(${target}
@@ -221,6 +223,7 @@ install(TARGETS
     depth_anything_trt_node
     image_converter_node
     cloud_cleaner_node
+    virtual_laserscan_node
     DESTINATION lib/${PROJECT_NAME}
 )
 

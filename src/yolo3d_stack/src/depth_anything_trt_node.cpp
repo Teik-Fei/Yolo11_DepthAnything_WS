@@ -1,3 +1,8 @@
+/*
+//================================
+// Depth Anything V2 TensorRT Node
+//================================
+
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -294,6 +299,228 @@ private:
 
 int main(int argc, char **argv)
 {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<DepthAnythingTrtNode>());
+    rclcpp::shutdown();
+    return 0;
+}
+*/
+
+//=======================================
+// Depth Anything V3 Metric TensorRT Node
+//=======================================
+
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
+#include <NvInfer.h>
+#include <cuda_runtime.h>
+#include <fstream>
+#include <memory>
+#include <vector>
+#include <iostream>
+
+// Logger for TensorRT
+class TrtLogger : public nvinfer1::ILogger {
+public:
+    void log(Severity severity, const char* msg) noexcept override {
+        // Only log warnings and errors to reduce noise
+        if (severity <= Severity::kWARNING) {
+            RCLCPP_INFO(rclcpp::get_logger("TrtLogger"), "%s", msg);
+        }
+    }
+};
+
+class DepthAnythingTrtNode : public rclcpp::Node {
+public:
+    explicit DepthAnythingTrtNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+        : Node("depth_anything_trt_node", options)
+    {
+        // === Parameters ===
+        camera_topic_ = declare_parameter("camera_topic", "/camera/image_raw");
+        engine_path_  = declare_parameter("engine_path", "/home/mecatron/depth_anything_v3_metric_fp16.engine"); 
+        output_topic_ = declare_parameter("output_topic", "/depth/image_raw");
+
+        // These will be overwritten by the engine dimensions
+        input_w_      = declare_parameter("input_width", 518);
+        input_h_      = declare_parameter("input_height", 518);
+        
+        max_dist_clip_ = declare_parameter("max_dist_clip", 15.0f); 
+
+        // Load Engine
+        if (!loadEngine(engine_path_)) {
+            RCLCPP_FATAL(get_logger(), "Failed to load TensorRT engine!");
+            throw std::runtime_error("Engine load failed");
+        }
+
+        // QoS
+        auto qos = rclcpp::SensorDataQoS();
+        sub_ = create_subscription<sensor_msgs::msg::Image>(
+            camera_topic_, qos,
+            std::bind(&DepthAnythingTrtNode::imageCb, this, std::placeholders::_1)
+        );
+        pub_ = create_publisher<sensor_msgs::msg::Image>(output_topic_, qos);
+
+        RCLCPP_INFO(get_logger(), "🚀 Depth Anything V3 Node Ready");
+    }
+
+    ~DepthAnythingTrtNode() {
+        if (input_dev_) cudaFree(input_dev_);
+        if (output_dev_) cudaFree(output_dev_);
+    }
+
+private:
+    // TensorRT resources
+    TrtLogger logger_;
+    std::unique_ptr<nvinfer1::IRuntime> runtime_;
+    std::unique_ptr<nvinfer1::ICudaEngine> engine_;
+    std::unique_ptr<nvinfer1::IExecutionContext> context_;
+    cudaStream_t stream_;
+    
+    float *input_dev_{nullptr};
+    float *output_dev_{nullptr};
+    
+    // Store the actual names found in the engine
+    std::string input_tensor_name_;
+    std::string output_tensor_name_;
+
+    int input_w_, input_h_;
+    int out_w_, out_h_;
+    float max_dist_clip_;
+    
+    // ROS
+    std::string camera_topic_, output_topic_, engine_path_;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
+
+    bool loadEngine(const std::string& path) {
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
+        if (!f) return false;
+        size_t size = f.tellg();
+        f.seekg(0, std::ios::beg);
+        std::vector<char> data(size);
+        f.read(data.data(), size);
+
+        runtime_.reset(nvinfer1::createInferRuntime(logger_));
+        engine_.reset(runtime_->deserializeCudaEngine(data.data(), size));
+        context_.reset(engine_->createExecutionContext());
+        
+        // === TensorRT 10 Dynamic Name Discovery ===
+        int32_t num_io = engine_->getNbIOTensors();
+        for (int32_t i = 0; i < num_io; ++i) {
+            const char* name = engine_->getIOTensorName(i);
+            nvinfer1::TensorIOMode mode = engine_->getTensorIOMode(name);
+            nvinfer1::Dims dims = engine_->getTensorShape(name);
+
+            if (mode == nvinfer1::TensorIOMode::kINPUT) {
+                input_tensor_name_ = name;
+                // V3 Metric input is usually [1, Time, 3, H, W] or [1, 3, H, W]
+                // We grab the last two dimensions for H and W
+                input_h_ = dims.d[dims.nbDims - 2];
+                input_w_ = dims.d[dims.nbDims - 1];
+                RCLCPP_INFO(get_logger(), "Found Input Tensor: %s [%dx%d]", name, input_w_, input_h_);
+            } 
+            else {
+                output_tensor_name_ = name;
+                out_h_ = dims.d[dims.nbDims - 2];
+                out_w_ = dims.d[dims.nbDims - 1];
+                RCLCPP_INFO(get_logger(), "Found Output Tensor: %s [%dx%d]", name, out_w_, out_h_);
+            }
+        }
+        
+        // Safety Check
+        if(input_tensor_name_.empty() || output_tensor_name_.empty()){
+            RCLCPP_ERROR(get_logger(), "Could not find input/output tensors!");
+            return false;
+        }
+
+        // Allocate CUDA Memory
+        // Note: For V3 Video tensor [1, 1, 3, H, W], size calculation remains H*W*3
+        cudaMalloc(&input_dev_, 3 * input_h_ * input_w_ * sizeof(float));
+        cudaMalloc(&output_dev_, out_h_ * out_w_ * sizeof(float));
+        cudaStreamCreate(&stream_);
+        
+        return true;
+    }
+
+    void imageCb(const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
+        cv_bridge::CvImageConstPtr cv_ptr;
+        try { cv_ptr = cv_bridge::toCvShare(msg, "bgr8"); } catch (...) { return; }
+        if (cv_ptr->image.empty()) return;
+
+        // 1. Resize & Letterbox
+        cv::Mat img = cv_ptr->image;
+        int original_w = img.cols;
+        int original_h = img.rows;
+        
+        float scale = std::min((float)input_w_ / original_w, (float)input_h_ / original_h);
+        int new_w = original_w * scale;
+        int new_h = original_h * scale;
+        
+        cv::Mat resized;
+        cv::resize(img, resized, cv::Size(new_w, new_h));
+
+        cv::Mat padded = cv::Mat::zeros(input_h_, input_w_, CV_8UC3);
+        resized.copyTo(padded(cv::Rect(0, 0, new_w, new_h)));
+
+        // 2. Preprocessing (Normalization)
+        cv::Mat float_img;
+        padded.convertTo(float_img, CV_32FC3, 1.0 / 255.0);
+        
+        cv::Mat channels[3];
+        cv::split(float_img, channels);
+        
+        // ImageNet Normalization
+        channels[2] = (channels[2] - 0.485) / 0.229; // R
+        channels[1] = (channels[1] - 0.456) / 0.224; // G
+        channels[0] = (channels[0] - 0.406) / 0.225; // B
+
+        std::vector<float> input_host(3 * input_w_ * input_h_);
+        memcpy(input_host.data(),                         channels[2].data, input_w_ * input_h_ * sizeof(float));
+        memcpy(input_host.data() + input_w_ * input_h_,   channels[1].data, input_w_ * input_h_ * sizeof(float));
+        memcpy(input_host.data() + 2*input_w_ * input_h_, channels[0].data, input_w_ * input_h_ * sizeof(float));
+
+        // 3. Inference
+        cudaMemcpyAsync(input_dev_, input_host.data(), input_host.size() * sizeof(float), cudaMemcpyHostToDevice, stream_);
+        
+        // === TensorRT 10 Execution ===
+        // We must set tensor addresses by Name, not by index array
+        context_->setTensorAddress(input_tensor_name_.c_str(), input_dev_);
+        context_->setTensorAddress(output_tensor_name_.c_str(), output_dev_);
+        
+        // Use enqueueV3
+        if (!context_->enqueueV3(stream_)) {
+            RCLCPP_ERROR(get_logger(), "TensorRT Inference Failed!");
+            return;
+        }
+        
+        std::vector<float> output_host(out_w_ * out_h_);
+        cudaMemcpyAsync(output_host.data(), output_dev_, output_host.size() * sizeof(float), cudaMemcpyDeviceToHost, stream_);
+        cudaStreamSynchronize(stream_);
+
+        // 4. Post-processing
+        cv::Mat raw_depth(out_h_, out_w_, CV_32FC1, output_host.data());
+
+        // Crop back to unpadded size
+        cv::Mat valid_depth = raw_depth(cv::Rect(0, 0, new_w, new_h));
+
+        // Resize back to ORIGINAL camera resolution
+        cv::Mat final_depth;
+        cv::resize(valid_depth, final_depth, cv::Size(original_w, original_h));
+
+        // V3 Metric Clipping
+        cv::threshold(final_depth, final_depth, max_dist_clip_, max_dist_clip_, cv::THRESH_TRUNC);
+        cv::threshold(final_depth, final_depth, 0.1, 0, cv::THRESH_TOZERO);
+
+        // Publish
+        sensor_msgs::msg::Image::SharedPtr out_msg = 
+            cv_bridge::CvImage(msg->header, "32FC1", final_depth).toImageMsg();
+        pub_->publish(*out_msg);
+    }
+};
+
+int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<DepthAnythingTrtNode>());
     rclcpp::shutdown();

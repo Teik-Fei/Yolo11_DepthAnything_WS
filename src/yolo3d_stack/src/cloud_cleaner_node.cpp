@@ -1,11 +1,7 @@
-// the purpose of this code is to subscribe to a PointCloud2 topic,
-// remove NaN points and points beyond a certain distance, and republish the cleaned cloud.
-
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
 
 class CloudCleanerNode : public rclcpp::Node
@@ -13,36 +9,34 @@ class CloudCleanerNode : public rclcpp::Node
 public:
   CloudCleanerNode() : Node("cloud_cleaner_node")
   {
-    // 1. Publisher for the CLEAN data
     pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/depth/pointcloud_filtered", 10);
     
-    // 2. Subscriber for the MESSY data
     sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       "/depth/pointcloud", 10, std::bind(&CloudCleanerNode::callback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(), "🧹 Cloud Cleaner Started: Removing NaNs and Far points...");
+    RCLCPP_INFO(this->get_logger(), "🧹 Universal Cloud Cleaner Started");
   }
 
 private:
   void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
-    // Convert ROS -> PCL
-    pcl::PCLPointCloud2 pcl_pc2;
-    pcl_conversions::toPCL(*msg, pcl_pc2);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::fromPCLPointCloud2(pcl_pc2, *temp_cloud);
+    // 1. Keep data in Safe Binary Format (PCLPointCloud2)
+    // This avoids the 'PointXYZ' vs 'PointXYZRGB' crash entirely.
+    pcl::PCLPointCloud2::Ptr cloud(new pcl::PCLPointCloud2);
+    pcl_conversions::toPCL(*msg, *cloud);
 
-    // FILTER STEP: Remove NaNs and points further than 5 meters
-    pcl::PassThrough<pcl::PointXYZ> pass;
-    pass.setInputCloud(temp_cloud);
-    pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.1, 20.0); // Min 0.1m, Max 20.0m
-    pass.filter(*temp_cloud);
+    // 2. Filter using the Binary Format
+    pcl::PCLPointCloud2::Ptr cloud_filtered(new pcl::PCLPointCloud2);
+    pcl::PassThrough<pcl::PCLPointCloud2> pass;
+    pass.setInputCloud(cloud);
+    pass.setFilterFieldName("z");     // Filter by Depth
+    pass.setFilterLimits(0.1, 10.0);  // Min 0.1m, Max 10m
+    pass.filter(*cloud_filtered);
 
-    // Convert PCL -> ROS and Publish
+    // 3. Publish
     sensor_msgs::msg::PointCloud2 output;
-    pcl::toROSMsg(*temp_cloud, output);
-    output.header = msg->header; // CRITICAL: Keep the original timestamp!
+    pcl_conversions::fromPCL(*cloud_filtered, output);
+    output.header = msg->header;
     pub_->publish(output);
   }
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;

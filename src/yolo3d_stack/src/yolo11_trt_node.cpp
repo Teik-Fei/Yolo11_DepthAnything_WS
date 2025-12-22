@@ -1043,7 +1043,7 @@ private:
                     det3.bbox.center.position.z = Z;
                     det3.bbox.size.x = (det.w * Z) / fx_;
                     det3.bbox.size.y = (det.h * Z) / fy_;
-                    det3.bbox.size.z = Z;
+                    det3.bbox.size.z = std::max(0.3, det3.bbox.size.x);
 
                     vision_msgs::msg::ObjectHypothesisWithPose hyp;
                     if(det.class_id >= 0 && det.class_id < (int)class_names_.size()) {
