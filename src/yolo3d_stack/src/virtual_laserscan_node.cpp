@@ -18,8 +18,8 @@ public:
         scan_topic_  = declare_parameter("scan_topic", "/scan");
 
         // Camera Intrinsics (Must match your Yolo/Depth nodes)
-        fx_ = declare_parameter("fx", 555.715);
-        cx_ = declare_parameter("cx", 346.721);
+        fx_ = declare_parameter("fx", 555.715735370142);
+        cx_ = declare_parameter("cx", 346.7216404016699);
         
         // Scan Settings
         // "scan_height": Number of vertical pixels to average/min-pool
