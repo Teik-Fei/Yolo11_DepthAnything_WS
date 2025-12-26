@@ -22,9 +22,10 @@ yolo11_trt:  # <--- MATCH THIS with your launch file node name
     camera_topic: "/camera/image_raw"
     depth_topic: "/depth/image_raw"
     
-    engine_path: "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine" 
+    #engine_path: "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine" 
+    engine_path: "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/sauvc_5.engine"
     
-    confidence_threshold: 0.75
+    confidence_threshold: 0.4
     
     # Intrinsics
     fx : 555.715735370142

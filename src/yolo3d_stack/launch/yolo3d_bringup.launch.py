@@ -87,11 +87,11 @@ def generate_launch_description():
 
 
        # Static TF: odom -> Base Link (Fake Odometry) [commented out for simulation purpose]
-       #Node(
-       #    package='tf2_ros',
-       #    executable='static_transform_publisher',
-       #    arguments = ['0', '0', '1.0', '0', '0', '0', 'odom', 'base_link']
-       #),
+       Node(
+           package='tf2_ros',
+           executable='static_transform_publisher',
+           arguments = ['0', '0', '1.0', '0', '0', '0', 'odom', 'base_link']
+       ),
 
 
        # ====================================================
@@ -100,22 +100,22 @@ def generate_launch_description():
 
 
        # YOLOv11 (TensorRT)
-       Node(
-           package='yolo3d_stack',
-           executable='yolo11_trt_node',
-           name='yolo11_trt',
-           output='screen',
-           parameters=[{
-               "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine",
-               "image_topic": "/camera/image_raw",
-               "visualize_output": True,
-               "publish_debug_image": True,
-               "debug_image_topic": "/yolo/debug_image",
-               "conf_threshold": 0.75,
-               "input_width": 640,
-               "input_height": 640,
-           }, yolo_params]
-       ),
+       #Node(
+       #    package='yolo3d_stack',
+       #    executable='yolo11_trt_node',
+       #    name='yolo11_trt',
+       #    output='screen',
+       #    parameters=[{
+       #        "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/yolo11n-seg.engine",
+       #        "image_topic": "/camera/image_raw",
+       #        "visualize_output": True,
+       #        "publish_debug_image": True,
+       #        "debug_image_topic": "/yolo/debug_image",
+       #        "conf_threshold": 0.75,
+       #        "input_width": 640,
+       #        "input_height": 640,
+       #    }, yolo_params]
+       #),
 
 
        # SAUVC dataset (TensorRT)
@@ -135,6 +135,24 @@ def generate_launch_description():
        #        "input_height": 640,
        #    }, yolo_params]
        #),
+
+       # SAUVC dataset (TensorRT) - UPDATED
+        Node(
+            package='yolo3d_stack',
+            executable='yolo11_trt_node',
+            name='yolo11_trt',
+            output='screen',
+            remappings=[
+                ('/camera/image_raw', '/camera/image_raw'),      # Input RGB
+                ('/depth/image_raw', '/depth/image_raw'),        # Input Depth
+                ('/yolo/obstacle_cloud', '/yolo/obstacle_cloud') # Output Cloud
+            ],
+            parameters=[{
+                "engine_path": "/home/mecatron/Yolo11_DepthAnything_WS/src/yolo3d_stack/models/sauvc_5.engine",
+                "conf_threshold": 0.45,
+                "visualize_output": True
+            }]
+        ),
 
 
        # Depth Anything (TensorRT) - THE BRAIN
@@ -329,7 +347,7 @@ def generate_launch_description():
                'transform_tolerance': 1.0,      # Allow 1.0s lag
            }],
            remappings=[
-               ('cloud_in', '/depth/pointcloud_filtered')
+               ('cloud_in', '/yolo/obstacle_cloud')
            ]
        ),
 

@@ -1,59 +1,65 @@
 costmap:
-  costmap:
-    ros__parameters:
-      # Frame Settings
-      global_frame: odom
-      robot_base_frame: base_link
-      use_sim_time: False
-      
-      # Performance
-      update_frequency: 5.0
-      publish_frequency: 2.0
-      rolling_window: true
-      width: 10
-      height: 10
-      resolution: 0.1
-      
-      # --- CHANGE 1: Add 'static_layer' to the list ---
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+ costmap:
+   ros__parameters:
+     # Frame Settings
+     global_frame: odom
+     robot_base_frame: base_link
+     use_sim_time: False
+    
+     # Performance
+     update_frequency: 5.0
+     publish_frequency: 2.0
+     rolling_window: true
+     width: 10
+     height: 10
+     resolution: 0.1
+    
+     # --- CHANGE 1: Add 'static_layer' to the list ---
+     plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
 
-      # --- CHANGE 2: Define the Static Layer (The Memory) ---
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: /projected_map   # <--- The output of OctoMap
-        subscribe_to_updates: true  # <--- Vital! Updates the map as you explore
-        use_maximum: false          # False = overwrite, True = keep highest cost
-        lethal_cost_threshold: 100
 
-      # Layer 2: Live Obstacles (The Reflexes)
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        observation_sources: scan_source yolo_source
+     # --- CHANGE 2: Define the Static Layer (The Memory) ---
+     static_layer:
+       plugin: "nav2_costmap_2d::StaticLayer"
+       map_topic: /projected_map   # <--- The output of OctoMap
+       subscribe_to_updates: true  # <--- Vital! Updates the map as you explore
+       use_maximum: false          # False = overwrite, True = keep highest cost
+       lethal_cost_threshold: 100
 
-        # Source A: Virtual Laser
-        scan_source:
-          topic: /scan
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 5.0
-          obstacle_max_range: 4.5
-          inf_is_valid: true
 
-        # Source B: YOLO Detections
-        yolo_source:
-          topic: /yolo/obstacle_cloud
-          max_obstacle_height: 2.0
-          clearing: False
-          marking: True
-          data_type: "PointCloud2"
-          obstacle_max_range: 5.0
-          min_obstacle_height: -2.0
+     # Layer 2: Live Obstacles (The Reflexes)
+     obstacle_layer:
+       plugin: "nav2_costmap_2d::ObstacleLayer"
+       enabled: True
+       observation_sources: yolo_source
 
-      # Layer 3: Inflation (The Safety Bubble)
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.6
+
+      #  Source A: Virtual Laser
+      # scan_source:
+      #    topic: /scan
+      #    max_obstacle_height: 2.0
+      #    clearing: True
+      #    marking: True
+      #    data_type: "LaserScan"
+      #    raytrace_max_range: 5.0
+      #    obstacle_max_range: 4.5
+      #    inf_is_valid: true
+
+
+       # Source B: YOLO Detections
+       yolo_source:
+         topic: /yolo/obstacle_cloud
+         max_obstacle_height: 2.0
+         clearing: False
+         marking: True
+         data_type: "PointCloud2"
+         obstacle_max_range: 5.0
+         min_obstacle_height: -2.0
+
+
+     # Layer 3: Inflation (The Safety Bubble)
+     inflation_layer:
+       plugin: "nav2_costmap_2d::InflationLayer"
+       cost_scaling_factor: 3.0
+       inflation_radius: 0.6
+

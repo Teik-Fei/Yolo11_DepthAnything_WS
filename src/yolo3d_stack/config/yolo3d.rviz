@@ -12,6 +12,7 @@ Panels:
         - /Odometry1/Topic1
         - /Odometry1/Covariance1
         - /Blue Voxel blocks1/Topic1
+        - /Map1
       Splitter Ratio: 0.5
     Tree Height: 646
   - Class: rviz_common/Selection
@@ -31,7 +32,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: YOLO Point Cloud
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -260,19 +261,19 @@ Visualization Manager:
         Value: /odom
       Value: true
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
+      Enabled: true
       Name: Blue Voxel blocks
       Namespaces:
-        {}
+        map: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /occupied_cells_vis_array
-      Value: false
+      Value: true
     - Class: octomap_rviz_plugins/OccupancyGrid
-      Enabled: false
+      Enabled: true
       Max. Height Display: 3.4028234663852886e+38
       Max. Octree Depth: 16
       Min. Height Display: -3.4028234663852886e+38
@@ -284,7 +285,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /octomap_full
-      Value: false
+      Value: true
       Voxel Alpha: 1
       Voxel Coloring: Cell Probability
       Voxel Rendering: Occupied Voxels
@@ -364,6 +365,27 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /yolo/debug_image
       Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /projected_map
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /projected_map_updates
+      Use Timestamp: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -410,7 +432,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 20.8022518157959
+      Distance: 9.4915771484375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -425,10 +447,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3347969055175781
+      Pitch: 0.42479681968688965
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.5581740140914917
+      Yaw: 3.2813713550567627
     Saved: ~
 Window Geometry:
   BEV:
