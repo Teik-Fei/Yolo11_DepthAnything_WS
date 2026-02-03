@@ -1,0 +1,23 @@
+# ROS 2 build artifacts
+build/
+install/
+log/
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Large binaries and model weights
+*.whl
+*.pt
+*.engine
+*.onnx
+
+# Visualization/Temporary files
+frames_*.gv
+frames_*.pdf
+trt_log.txt
+
+# Hidden config/Version files (like the ones in your find output)
+=0.19.1
+=4.35.0
