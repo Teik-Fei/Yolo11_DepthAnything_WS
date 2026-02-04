@@ -1,13 +1,13 @@
 /**
- * OctoMap Voxel Cleaner Node - Simple Version for 2D Costmap
+ * OctoMap Smart Cleaner Node - Prevents Growing Blocks
  * 
- * Purpose: Keep only recent voxels, project to 2D costmap
+ * Purpose: Only publish CURRENT detection, not accumulated history
  * 
- * This node:
- * 1. Subscribes to obstacle cloud from YOLO
- * 2. Removes old voxels (prevents accumulation)
- * 3. Publishes cleaned cloud to OctoMap
- * 4. OctoMap automatically projects to 2D costmap
+ * Key Improvements:
+ * 1. Publishes ONLY the latest detection frame (not merged history)
+ * 2. Implements automatic timeout clearing
+ * 3. Filters duplicate/low-quality detections
+ * 4. Prevents the "growing trail" effect when object moves
  */
 
 #include <rclcpp/rclcpp.hpp>
@@ -15,16 +15,18 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <deque>
 
 class OctoMapCleanerNode : public rclcpp::Node {
 public:
     OctoMapCleanerNode() : Node("octomap_cleaner_node") {
-        RCLCPP_INFO(this->get_logger(), "🗺️  OctoMap Cleaner for 2D Costmap");
+        RCLCPP_INFO(this->get_logger(), "🗺️  OctoMap Smart Cleaner - Prevents Growing Blocks");
         
-        // Parameters - tuned for costmap generation
-        max_cloud_age_ms_ = this->declare_parameter<int>("max_cloud_age_ms", 1500);  // 1.5 sec window
-        max_buffer_size_ = this->declare_parameter<int>("max_buffer_size", 10);      // Keep 10 frames
+        // ===== CRITICAL PARAMETER: Detection Timeout =====
+        // If no detection received for this duration, publish EMPTY cloud to clear OctoMap
+        detection_timeout_ms_ = this->declare_parameter<int>("detection_timeout_ms", 2000);  // 2 seconds
+        
+        // Minimum points to consider a valid detection (filter noise)
+        min_points_threshold_ = this->declare_parameter<int>("min_points_threshold", 50);
         
         // Subscribers & Publishers
         cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -33,61 +35,95 @@ public:
             std::bind(&OctoMapCleanerNode::cloudCallback, this, std::placeholders::_1)
         );
         
-        // Publish cleaned cloud to OctoMap
+        // Publish cleaned cloud to OctoMap (ONLY latest frame, no history)
         clean_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
             "/octomap_clean/cloud_in", 10
         );
         
+        // Timeout timer to periodically clear stale detections
+        timeout_timer_ = this->create_wall_timer(
+            std::chrono::milliseconds(500),  // Check every 500ms
+            std::bind(&OctoMapCleanerNode::checkTimeout, this)
+        );
+        
+        last_detection_time_ = this->now();
+        
         RCLCPP_INFO(this->get_logger(), 
-            "Keeping clouds from last %d ms (max %d frames)",
-            max_cloud_age_ms_, max_buffer_size_);
+            "Detection timeout: %d ms | Min points: %d",
+            detection_timeout_ms_, min_points_threshold_);
     }
 
 private:
-    struct CloudBuffer {
-        rclcpp::Time timestamp;
-        sensor_msgs::msg::PointCloud2::SharedPtr cloud;
-    };
-    
-    std::deque<CloudBuffer> cloud_buffer_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clean_cloud_pub_;
+    rclcpp::TimerBase::SharedPtr timeout_timer_;
     
-    int max_cloud_age_ms_;
-    int max_buffer_size_;
+    int detection_timeout_ms_;
+    int min_points_threshold_;
+    rclcpp::Time last_detection_time_;
+    std::string last_frame_id_;
     
     void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-        auto now = this->now();
+        // Convert to PCL for analysis
+        pcl::PointCloud<pcl::PointXYZ> pc;
+        pcl::fromROSMsg(*msg, pc);
         
-        // Add new cloud to buffer
-        cloud_buffer_.push_back({now, msg});
-        
-        // Remove old clouds
-        while (!cloud_buffer_.empty()) {
-            auto age_ms = (now - cloud_buffer_.front().timestamp).total_milliseconds();
-            if (age_ms > max_cloud_age_ms_ || cloud_buffer_.size() > (size_t)max_buffer_size_) {
-                cloud_buffer_.pop_front();
-            } else {
-                break;
-            }
+        // ===== FILTER 1: Empty cloud check =====
+        if (pc.points.empty()) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "Received empty detection cloud - no objects detected");
+            return;
         }
         
-        // Merge all recent clouds
-        pcl::PointCloud<pcl::PointXYZ> merged_cloud;
-        for (const auto& buf : cloud_buffer_) {
-            pcl::PointCloud<pcl::PointXYZ> pc;
-            pcl::fromROSMsg(*buf.cloud, pc);
-            merged_cloud += pc;
+        // ===== FILTER 2: Minimum points threshold =====
+        if ((int)pc.points.size() < min_points_threshold_) {
+            RCLCPP_DEBUG(this->get_logger(),
+                "Filtered: Only %zu points (threshold: %d)", 
+                pc.points.size(), min_points_threshold_);
+            return;
         }
         
-        // Publish merged cloud
+        // ===== PUBLISH ONLY CURRENT FRAME (NO ACCUMULATION) =====
+        // This is the key fix: don't merge with history, just publish fresh detection
         sensor_msgs::msg::PointCloud2 output_msg;
-        pcl::toROSMsg(merged_cloud, output_msg);
+        pcl::toROSMsg(pc, output_msg);
         output_msg.header = msg->header;
+        
         clean_cloud_pub_->publish(output_msg);
         
-        RCLCPP_DEBUG(this->get_logger(), "Merged: %zu points from %zu buffers",
-            merged_cloud.size(), cloud_buffer_.size());
+        // Update timestamp for timeout detection
+        last_detection_time_ = this->now();
+        last_frame_id_ = msg->header.frame_id;
+        
+        RCLCPP_DEBUG(this->get_logger(), 
+            "✅ Published fresh detection: %zu points from frame '%s'",
+            pc.points.size(), msg->header.frame_id.c_str());
+    }
+    
+    void checkTimeout() {
+        auto now = this->now();
+        auto time_since_last_detection = (now - last_detection_time_).total_milliseconds();
+        
+        // If no detection received for timeout duration, clear OctoMap
+        if (time_since_last_detection > detection_timeout_ms_) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "Detection timeout (%ld ms > %d ms). Publishing EMPTY cloud to clear OctoMap.",
+                time_since_last_detection, detection_timeout_ms_);
+            
+            // Publish empty cloud to tell OctoMap "nothing here anymore"
+            sensor_msgs::msg::PointCloud2 empty_cloud;
+            empty_cloud.header.stamp = now;
+            empty_cloud.header.frame_id = last_frame_id_.empty() ? "base_link" : last_frame_id_;
+            empty_cloud.width = 0;
+            empty_cloud.height = 0;
+            empty_cloud.is_dense = true;
+            
+            // Set up fields for empty cloud (OctoMap expects proper structure)
+            sensor_msgs::PointCloud2Modifier modifier(empty_cloud);
+            modifier.setPointCloud2FieldsByString(1, "xyz");
+            
+            clean_cloud_pub_->publish(empty_cloud);
+        }
     }
 };
 

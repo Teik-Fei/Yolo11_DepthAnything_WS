@@ -77,12 +77,19 @@ def generate_launch_description():
        ),
 
 
-       # 2. PointCloud Cleaner (Fixes OctoMap Crash)
+       # 2. OctoMap Smart Cleaner (Prevents Growing Blocks)
+       # KEY FIX: Only publishes CURRENT detection, not accumulated history
        Node(
            package='yolo3d_stack',
-           executable='cloud_cleaner_node',   # Make sure this matches your build name!
+           executable='cloud_cleaner_node',
            name='cloud_cleaner',
-           output='screen'
+           output='screen',
+           parameters=[{
+               # If no detection for this long, publish empty cloud to clear OctoMap
+               'detection_timeout_ms': 2000,  # 2 seconds
+               # Minimum points needed to consider a valid detection
+               'min_points_threshold': 50
+           }]
        ),
 
 
