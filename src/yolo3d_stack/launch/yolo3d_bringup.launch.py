@@ -81,14 +81,14 @@ def generate_launch_description():
        # KEY FIX: Only publishes CURRENT detection, not accumulated history
        Node(
            package='yolo3d_stack',
-           executable='cloud_cleaner_node',
-           name='cloud_cleaner',
+           executable='octomap_cleaner_node',
+           name='octomap_cleaner',
            output='screen',
            parameters=[{
                # If no detection for this long, publish empty cloud to clear OctoMap
-               'detection_timeout_ms': 2000,  # 2 seconds
-               # Minimum points needed to consider a valid detection
-               'min_points_threshold': 50
+               'detection_timeout_ms': 1500,  # 1.5 seconds
+               # Minimum points needed to consider a valid detection (filter noise)
+               'min_points_threshold': 20      # Lower threshold since YOLO only generates ~25 points per detection
            }]
        ),
 
@@ -330,7 +330,8 @@ def generate_launch_description():
 
 
        # ====================================================
-       # 3D MAPPING (OCTOMAP)
+       # 3D MAPPING (OCTOMAP) - Maps Detected Objects
+       # Uses cleaned YOLO detections for accurate shape representation
        # ====================================================
        Node(
            package='octomap_server',
@@ -338,23 +339,23 @@ def generate_launch_description():
            name='octomap_server',
            output='screen',
            parameters=[{
-               'resolution': 0.1,                 # Voxel size (10cm cubes)
+               'resolution': 0.05,                 # 5cm voxels for better object detail
                'frame_id': 'odom',                 # Global frame
-               'base_frame_id': 'base_link',      # Robot frame
-               'sensor_model/max_range': 5.0,     # Ignore depth noise > 5m
+               'base_frame_id': 'base_link',       # Robot frame
+               'sensor_model/max_range': 5.0,      # Max mapping range
               
-               # FILTERING (Critical for Underwater)
-               'sensor_model/hit': 0.7,           # Confidence increase if obstacle seen
-               'sensor_model/miss': 0.2,          # Confidence decrease if empty space seen
-               'sensor_model/min': 0.12,          # Clamp min probability
-               'sensor_model/max': 0.97,          # Clamp max probability
+               # FILTERING - Aggressive to match object shapes
+               'sensor_model/hit': 0.9,            # High confidence for detected objects
+               'sensor_model/miss': 0.5,           # Clear noise aggressively
+               'sensor_model/min': 0.1,            # Low threshold for faster clearing
+               'sensor_model/max': 0.98,           # High max confidence
               
-               'filter_ground': False,            # Set True if you want to remove the sea floor
-               # --- FIX TIMING ISSUES ---
-               'transform_tolerance': 1.0,      # Allow 1.0s lag
+               'filter_ground': False,             # Keep floor for reference
+               'transform_tolerance': 2.0,         # Allow 2.0s lag for TF
+               'latch': False,                     # Don't latch topics
            }],
            remappings=[
-               ('cloud_in', '/yolo/obstacle_cloud')
+               ('cloud_in', '/octomap_clean/cloud_in')  # Use CLEANED detections
            ]
        ),
 

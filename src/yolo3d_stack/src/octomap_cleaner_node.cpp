@@ -102,25 +102,20 @@ private:
     
     void checkTimeout() {
         auto now = this->now();
-        auto time_since_last_detection = (now - last_detection_time_).total_milliseconds();
+        auto time_since_last_detection = (now - last_detection_time_).seconds() * 1000.0;
         
         // If no detection received for timeout duration, clear OctoMap
         if (time_since_last_detection > detection_timeout_ms_) {
             RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                "Detection timeout (%ld ms > %d ms). Publishing EMPTY cloud to clear OctoMap.",
+                "Detection timeout (%.1f ms > %d ms). Publishing EMPTY cloud to clear OctoMap.",
                 time_since_last_detection, detection_timeout_ms_);
             
             // Publish empty cloud to tell OctoMap "nothing here anymore"
+            pcl::PointCloud<pcl::PointXYZ> empty_pcl;
             sensor_msgs::msg::PointCloud2 empty_cloud;
+            pcl::toROSMsg(empty_pcl, empty_cloud);
             empty_cloud.header.stamp = now;
             empty_cloud.header.frame_id = last_frame_id_.empty() ? "base_link" : last_frame_id_;
-            empty_cloud.width = 0;
-            empty_cloud.height = 0;
-            empty_cloud.is_dense = true;
-            
-            // Set up fields for empty cloud (OctoMap expects proper structure)
-            sensor_msgs::PointCloud2Modifier modifier(empty_cloud);
-            modifier.setPointCloud2FieldsByString(1, "xyz");
             
             clean_cloud_pub_->publish(empty_cloud);
         }
