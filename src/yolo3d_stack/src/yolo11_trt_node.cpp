@@ -1912,6 +1912,12 @@ private:
         return sum / buffer.size();
     }
 
+    // ===== LIGHTWEIGHT 2D Costmap Point Cloud =====
+    // Simplified version: Only publishes flat 2D obstacle footprint (not 3D voxel columns)
+    // Optimized for Nav2 2D costmap with minimal computational overhead
+    // 
+    // GATE HANDLING: Gates are excluded from costmap obstacles but still published
+    // in Detection3DArray for task-specific navigation logic
     void publish_obstacles_as_cloud(const vision_msgs::msg::Detection3DArray& dets) 
     {
         if (dets.detections.empty()) return;
@@ -1919,45 +1925,51 @@ private:
         pcl::PointCloud<pcl::PointXYZ> cloud;
     
         for (const auto& det : dets.detections) {
+            // ===== SKIP GATES - They should be passable, not obstacles =====
+            // Gates are still available in /yolo3d/detections for alignment/guidance
+            if (!det.results.empty()) {
+                std::string class_name = det.results[0].hypothesis.class_id;
+                if (class_name == "Gate" || class_name == "3") { // "3" is the class index
+                    RCLCPP_DEBUG(this->get_logger(), "Skipping Gate from costmap (passable object)");
+                    continue; // Don't add gates to obstacle point cloud
+                }
+            }
+            
             // Center position (in Robot Frame coordinates)
             float cx = det.bbox.center.position.x; // Camera X (Left/Right)
             float cz = det.bbox.center.position.z; // Camera Z (Forward)
         
             // Dimensions
-            float width = (det.bbox.size.x > 0) ? det.bbox.size.x : 0.1f; 
-            float height = (det.bbox.size.y > 0) ? det.bbox.size.y : 1.0f; // Height of the object
+            float width = (det.bbox.size.x > 0) ? det.bbox.size.x : 0.3f; 
+            float depth = (det.bbox.size.z > 0) ? det.bbox.size.z : 0.3f;
 
-            // Generate a VERTICAL Column of points (Cylinder-ish)
-            int num_layers = 10; // How many stacked layers
-        
-            for (int k = 0; k < num_layers; k++) {
-                // Calculate height for this layer (from -0.5 to +0.5 of height)
-                float h_rel = (k / (float)num_layers) * height - (height / 2.0f);
+            // Create a FLAT 2D footprint (3x3 grid at z=0.5m height)
+            // This is what Nav2's obstacle layer will see
+            int grid_size = 3; // 3x3 = 9 points per object (lightweight!)
             
-                // Create a small cross pattern (+) at each height level
-                // This ensures OctoMap sees a "solid" stick
-                float offsets[] = {0.0f, -width/2.0f, width/2.0f};
-            
-                for (float off_x : offsets) {
-                    for (float off_y : offsets) {
-                        pcl::PointXYZ p;
-                        // Map Camera Coords -> Robot Base Link (approx)
-                        // Camera Z -> Robot X (Forward)
-                        // Camera X -> Robot Y (Left) - Inverted
+            for (int i = 0; i < grid_size; i++) {
+                for (int j = 0; j < grid_size; j++) {
+                    pcl::PointXYZ p;
+                    
+                    // Distribute points across the object footprint
+                    float x_offset = (i / (float)(grid_size - 1)) * depth - depth/2.0f;
+                    float y_offset = (j / (float)(grid_size - 1)) * width - width/2.0f;
+                    
+                    // Map Camera Coords -> Robot Base Link
+                    // Camera Z -> Robot X (Forward)
+                    // Camera X -> Robot Y (Left) - Inverted
+                    p.x = cz + x_offset; 
+                    p.y = -(cx + y_offset); 
+                    p.z = 0.5; // Fixed height for 2D costmap
                      
-                        p.x = cz + off_x; 
-                        p.y = -(cx + off_y); 
-                        p.z = h_rel; // <-- ACTUAL VERTICAL HEIGHT
-                     
-                        cloud.points.push_back(p);
-                    }
+                    cloud.points.push_back(p);
                 }
             }
         }
 
         sensor_msgs::msg::PointCloud2 output_msg;
         pcl::toROSMsg(cloud, output_msg);
-        output_msg.header.frame_id = "base_link"; // Ensure this matches your TF tree
+        output_msg.header.frame_id = "base_link";
         output_msg.header.stamp = this->now();
         obstacle_pub_->publish(output_msg);
     }
@@ -2188,10 +2200,11 @@ private:
         } 
 
         det2d_pub_->publish(msg_2d);
-        det3d_pub_->publish(msg_3d); // Publish 3D
+        det3d_pub_->publish(msg_3d); // Publish 3D - Contains coordinates & distances for 2D costmap
         debug_pub_->publish(*cv_bridge::CvImage(msg->header, "bgr8", debug_img).toImageMsg());
-        // Publish the cloud for Nav2
-        publish_obstacles_as_cloud(msg_3d); // Assuming you gathered detections into a msg_3d object
+        
+        // Publish lightweight 2D point cloud for Nav2 costmap (9 points per object)
+        publish_obstacles_as_cloud(msg_3d);
     }
 };
 
