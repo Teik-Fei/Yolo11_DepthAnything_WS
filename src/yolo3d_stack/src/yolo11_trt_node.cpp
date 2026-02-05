@@ -218,7 +218,8 @@ private:
 
     void publish_obstacles_as_cloud(const vision_msgs::msg::Detection3DArray& dets) {
     
-    if (dets.detections.empty()) return;
+    // REMOVED: if (dets.detections.empty()) return;
+    // We MUST publish every frame (even if empty) so octomap_cleaner doesn't timeout
 
     pcl::PointCloud<pcl::PointXYZ> cloud;
     

@@ -77,16 +77,14 @@ def generate_launch_description():
        ),
 
 
-       # 2. OctoMap Smart Cleaner (Prevents Growing Blocks)
-       # KEY FIX: Only publishes CURRENT detection, not accumulated history
+       # 2. OctoMap Persistent Cleaner (Builds Memory Map)
+       # Publishes CURRENT detection only, OctoMap handles persistence
        Node(
            package='yolo3d_stack',
            executable='octomap_cleaner_node',
            name='octomap_cleaner',
            output='screen',
            parameters=[{
-               # If no detection for this long, publish empty cloud to clear OctoMap
-               'detection_timeout_ms': 1500,  # 1.5 seconds
                # Minimum points needed to consider a valid detection (filter noise)
                'min_points_threshold': 20      # Lower threshold since YOLO only generates ~25 points per detection
            }]
@@ -344,11 +342,11 @@ def generate_launch_description():
                'base_frame_id': 'base_link',       # Robot frame
                'sensor_model/max_range': 5.0,      # Max mapping range
               
-               # FILTERING - Aggressive to match object shapes
-               'sensor_model/hit': 0.9,            # High confidence for detected objects
-               'sensor_model/miss': 0.5,           # Clear noise aggressively
-               'sensor_model/min': 0.1,            # Low threshold for faster clearing
-               'sensor_model/max': 0.98,           # High max confidence
+               # PERSISTENT MODE - Remember detected objects
+               'sensor_model/hit': 0.95,           # Very high confidence when detected
+               'sensor_model/miss': 0.45,          # Harder to clear (was 0.5)
+               'sensor_model/min': 0.12,           # Slightly higher min to persist longer
+               'sensor_model/max': 0.97,           # Keep objects occupied
               
                'filter_ground': False,             # Keep floor for reference
                'transform_tolerance': 2.0,         # Allow 2.0s lag for TF

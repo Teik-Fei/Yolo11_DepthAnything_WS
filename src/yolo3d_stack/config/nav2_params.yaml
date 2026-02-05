@@ -23,8 +23,10 @@ costmap:
        plugin: "nav2_costmap_2d::StaticLayer"
        map_topic: /projected_map        # OctoMap's 2D projection
        subscribe_to_updates: true       # Update as environment is explored
-       use_maximum: false               # Replace old data with new
+       use_maximum: true                # Keep both old and new data (persistence)
        lethal_cost_threshold: 100       # Mark occupied cells as lethal
+       # Fix QoS mismatch with octomap_server
+       map_subscribe_transient_local: true
 
 
      # Layer 2: Dynamic Obstacles (Live YOLO Detections)
@@ -32,20 +34,23 @@ costmap:
        plugin: "nav2_costmap_2d::ObstacleLayer"
        enabled: True
        observation_sources: yolo_source
+       combination_method: 1            # 1 = Max (keep highest cost, prevents clearing)
 
 
        # YOLO Detected Objects (Flares, Buoys, etc.)
        yolo_source:
          topic: /yolo/obstacle_cloud
          max_obstacle_height: 2.0
-         clearing: True                 # Clear when object moves away
+         clearing: False                # Don't clear - keep detected objects
          marking: True                  # Mark detected obstacles
          data_type: "PointCloud2"
          obstacle_max_range: 5.0
          min_obstacle_height: -2.0
          obstacle_min_range: 0.0
-         raytrace_max_range: 5.0        # Clear false obstacles
+         raytrace_max_range: 5.0
          raytrace_min_range: 0.0
+         expected_update_rate: 0.0      # 0 = No timeout (infinite persistence)
+         observation_persistence: 0.0   # 0 = Keep forever
 
 
      # Layer 3: Inflation (The Safety Bubble)
